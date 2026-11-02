@@ -27,7 +27,7 @@ Jenkins 显示 aborted、Agent 掉线或机器休眠后：恢复 Docker 和 Agen
 
 `learning/scripts/environment.sh` 显式选择 JDK 21、仓库 env 下的 Node 22.23.4、Go 自动工具链、新版 kubectl、Docker context socket；路径可按另一台 Mac 调整。Yarn 直接运行仓库内固定的 4.11.0 脚本，不依赖 Node 是否附带 Corepack。测试包含 Carts DynamoDB、Orders PostgreSQL、Catalog MySQL、Checkout Redis 的 Testcontainers。
 
-Docker Desktop 24.0.6 的 API 上限是 1.43；Java 测试通过 `-Dapi.version` 使用 daemon 报告的兼容版本。测试使用虚构的本地 AWS 凭据，绝不依赖个人 AWS 账户。
+Docker Desktop 24.0.6 的 API 上限是 1.43；Java 测试通过 `-Dapi.version` 使用 daemon 报告的兼容版本。测试使用虚构的本地 AWS 凭据，绝不依赖个人 AWS 账户。后台 Agent 不继承交互终端代理；需要时将代理配置保存在忽略的 `env/network.sh`（权限 600），环境脚本会显式加载。
 
 本地学习镜像使用 `learning/docker/`：先在原生 Agent 测试和编译，再打包产物；Go 交叉编译 Linux ARM64，Java jar 跨平台。Checkout 只携带生产依赖。上游 Dockerfile 保留，未来迁移 AWS 的多架构镜像构建另行学习。这样减少 Docker VM 内重复 Maven 编译的峰值，但原生构建仍占 Mac 内存。
 
@@ -40,7 +40,7 @@ Maven 学习配置只使用 Maven Central，避免上游 Spring milestone 仓库
 1. 准备 Docker Desktop、JDK 21、Node 22、Go、kind v0.33.0、kubectl v1.37.0、Python/PyYAML；工具与虚拟环境放入忽略的 `env/`。
 2. 创建带持久卷、仅监听 127.0.0.1:5001 的 `retail-registry`；创建 `learning/kind.yaml` 定义的集群。
 3. 运行 `learning/scripts/node-config.sh` 配置 containerd Registry 与 NO_PROXY、kubelet 内存预留。kind 重建后必须重跑。节点继承宿主机 127.0.0.1 代理时，公共拉取会失败；本方案依赖镜像也缓存在本地 Registry。
-4. 管理员执行 `dependencies.py` 准备五个依赖并记录本地 digest；审阅其对 kustomization 的变更。
+4. 管理员执行 `dependencies.py` 准备五个依赖、`base-images.py` 缓存固定摘要的构建基础镜像；审阅生成的本地 digest。
 5. 各服务运行 `test-build.sh <service>` 和 `image.sh <service> <tag>`，产生 `reports/<service>-image.json`。生产依赖与测试报告必须完整，不能拿上游购物车镜像替代修复版。
 6. 管理员使用 `bootstrap.py`：初始化本地随机密码，部署清单，生成受限发布配置。再次执行会保留 release-state，但会滚动基础设施配置；先审阅变更。
 7. 使用发布环境运行 `release.py bootstrap` 完成真实冒烟并记录首个基线。源码有未提交改动时 sourceSha 为空，后续 Jenkins 必须重新构建，不把未经追溯的 SHA 当成功版本。

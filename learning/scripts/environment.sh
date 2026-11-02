@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Source in the native macOS Agent. LAB_HOME holds ignored tools and credentials.
 export LAB_HOME="${LAB_HOME:-/Users/lth/Documents/ChatGPT/k/retail-store-sample-app/env}"
+[ ! -f "$LAB_HOME/network.sh" ] || source "$LAB_HOME/network.sh"
 export JAVA_HOME="${JAVA_HOME_21:-/Users/lth/Library/Java/JavaVirtualMachines/corretto-21.0.5/Contents/Home}"
 export PATH="$LAB_HOME/node-v22.23.4-darwin-arm64/bin:$JAVA_HOME/bin:$LAB_HOME/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export DOCKER_HOST="$(docker context inspect --format '{{.Endpoints.docker.Host}}')"

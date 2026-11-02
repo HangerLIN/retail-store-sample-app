@@ -7,6 +7,7 @@ service="$1"
 case "$service" in
   carts|orders|ui)
     folder="$service"; [ "$service" != carts ] || folder=cart
+    rm -rf "src/$folder/target/surefire-reports"
     (cd "src/$folder"; ./mvnw -s "../../learning/maven-settings.xml" --no-transfer-progress -Dapi.version="$DOCKER_API_VERSION" package -Dspring-boot.start.skip=true -Dspring-boot.stop.skip=true)
     "$LAB_HOME/python/bin/python" - "$folder" <<'PY'
 import sys, glob, xml.etree.ElementTree as E
@@ -24,6 +25,7 @@ assert any(x.get('Action')=='pass' and x.get('Test') for x in map(json.loads,ope
 PY
     ;;
   checkout)
+    rm -f reports/checkout-tests.json
     (cd src/checkout; node ../../.yarn/releases/yarn-4.11.0.cjs install --immutable; node ../../.yarn/releases/yarn-4.11.0.cjs test:integration --runInBand --json --outputFile=../../reports/checkout-tests.json; node ../../.yarn/releases/yarn-4.11.0.cjs build)
     "$LAB_HOME/python/bin/python" - <<'PY'
 import json

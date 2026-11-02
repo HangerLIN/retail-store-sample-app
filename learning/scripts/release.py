@@ -32,20 +32,26 @@ def readstate():
     return o, json.loads(o["data"]["state.json"])
 
 
-def write(state):
-    o, _ = readstate()
-    kubectl(
-        "patch",
-        "cm",
-        "release-state",
-        "--type=merge",
-        "-p",
-        json.dumps(
-            {
-                "metadata": {"resourceVersion": o["metadata"]["resourceVersion"]},
-                "data": {"state.json": json.dumps(state)},
-            }
-        ),
+def write(state, base):
+    # Compare against the version read before the operation, not a fresh snapshot.
+    return json.loads(
+        kubectl(
+            "patch",
+            "cm",
+            "release-state",
+            "--type=merge",
+            "-o",
+            "json",
+            "-p",
+            json.dumps(
+                {
+                    "metadata": {
+                        "resourceVersion": base["metadata"]["resourceVersion"]
+                    },
+                    "data": {"state.json": json.dumps(state)},
+                }
+            ),
+        )
     )
 
 
@@ -197,7 +203,7 @@ def evidence(images):
 
 def reconcile(allow_unhealthy=False):
     preflight()
-    _, state = readstate()
+    base, state = readstate()
     good = state.get("lastGood")
     if not good:
         assert not state.get("pending"), (
@@ -213,14 +219,14 @@ def reconcile(allow_unhealthy=False):
             if not allow_unhealthy:
                 raise
             state["recoveryFailed"] = True
-            write(state)
+            write(state, base)
             print(
                 "Previous release unhealthy; a fully tested repair candidate may proceed"
             )
             return
         state.pop("pending", None)
         state.pop("recoveryFailed", None)
-        write(state)
+        write(state, base)
         print("Restored last verified release")
 
 
@@ -249,7 +255,7 @@ def publish(bootstrap=False):
         for s in SERVICES
     }
     checkimages(images)
-    _, state = readstate()
+    base, state = readstate()
     candidate = {
         "images": images,
         "sourceSha": subprocess.check_output(
@@ -265,7 +271,7 @@ def publish(bootstrap=False):
     ):
         candidate["sourceSha"] = None
     state["pending"] = candidate
-    write(state)
+    base = write(state, base)
     try:
         deploy(images)
         business_verify()
@@ -275,13 +281,13 @@ def publish(bootstrap=False):
             deploy(state["lastGood"]["images"])
             business_verify()
             state.pop("pending", None)
-            write(state)
+            base = write(state, base)
         raise
     candidate["verifiedAt"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
     state["lastGood"] = candidate
     state.pop("pending", None)
     state.pop("recoveryFailed", None)
-    write(state)
+    base = write(state, base)
     pathlib.Path("reports/release.json").write_text(json.dumps(state, indent=2))
     print("Recorded verified release")
 

@@ -1,4 +1,4 @@
-FROM docker.io/library/node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914
+FROM localhost:5001/bases/checkout@sha256:1da33afdf94a4ccf4a862836c7ca77ba0d7a0900ade96fb2c3c35c5d1dce208e
 WORKDIR /app
 COPY --chown=node:node dist ./dist
 COPY --chown=node:node node_modules ./node_modules

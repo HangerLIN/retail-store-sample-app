@@ -1,4 +1,4 @@
-FROM docker.io/library/alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f
+FROM localhost:5001/bases/catalog@sha256:4df98fb6e5a283302fb1d9d5e5d2d33c195bebf9460d9419f625d1e32ba401ca
 RUN apk add --no-cache ca-certificates && adduser -D -u 1000 app
 WORKDIR /app
 COPY catalog /app/main
