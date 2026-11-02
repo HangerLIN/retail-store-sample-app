@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: orders-postgresql
+spec:
+  template:
+    spec:
+      containers:
+      - $patch: replace
+      - name: postgresql
+        image: public.ecr.aws/docker/library/postgres:16.1
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: POSTGRES_DB
+          value: orders
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: orders-db
+              key: RETAIL_ORDERS_PERSISTENCE_USERNAME
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: orders-db
+              key: RETAIL_ORDERS_PERSISTENCE_PASSWORD
+        - name: PGDATA
+          value: /data/pgdata
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        ports:
+        - name: postgresql
+          containerPort: 5432
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            memory: 384Mi
+      volumes:
+      - $patch: replace
+      - name: data
+        persistentVolumeClaim:
+          claimName: orders-postgresql

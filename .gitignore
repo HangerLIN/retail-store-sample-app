@@ -40,3 +40,7 @@ screenshots
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+# Local lab credentials (generated, never commit)
+learning/k8s/.secrets/
+
+__pycache__/

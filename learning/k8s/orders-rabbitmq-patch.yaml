@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: orders-rabbitmq
+spec:
+  template:
+    spec:
+      containers:
+      - $patch: replace
+      - name: rabbitmq
+        image: public.ecr.aws/docker/library/rabbitmq:3-management
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: amqp
+          containerPort: 5672
+          protocol: TCP
+        - name: http
+          containerPort: 15672
+          protocol: TCP
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/rabbitmq/mnesia
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            memory: 384Mi
+        env:
+        - name: RABBITMQ_DEFAULT_USER
+          valueFrom:
+            secretKeyRef:
+              name: orders-rabbitmq
+              key: RETAIL_ORDERS_MESSAGING_RABBITMQ_USERNAME
+        - name: RABBITMQ_DEFAULT_PASS
+          valueFrom:
+            secretKeyRef:
+              name: orders-rabbitmq
+              key: RETAIL_ORDERS_MESSAGING_RABBITMQ_PASSWORD
+      volumes:
+      - $patch: replace
+      - name: data
+        emptyDir: {}

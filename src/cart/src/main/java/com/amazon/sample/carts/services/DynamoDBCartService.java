@@ -38,13 +38,17 @@ import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
 import software.amazon.awssdk.enhanced.dynamodb.model.Page;
 import software.amazon.awssdk.enhanced.dynamodb.model.QueryConditional;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
-import software.amazon.awssdk.services.dynamodb.model.DeleteTableRequest;
+import software.amazon.awssdk.services.dynamodb.model.IndexStatus;
+import software.amazon.awssdk.services.dynamodb.model.KeyType;
 import software.amazon.awssdk.services.dynamodb.model.ProjectionType;
+import software.amazon.awssdk.services.dynamodb.model.ResourceInUseException;
 import software.amazon.awssdk.services.dynamodb.model.ResourceNotFoundException;
+import software.amazon.awssdk.services.dynamodb.model.TableStatus;
 
 @Slf4j
 public class DynamoDBCartService
-  implements CartService, ApplicationListener<ApplicationReadyEvent> {
+  implements CartService, ApplicationListener<ApplicationReadyEvent>
+{
 
   private final DynamoDbClient dynamoDBClient;
   private final boolean createTable;
@@ -74,35 +78,105 @@ public class DynamoDBCartService
 
   @PostConstruct
   public void init() {
-    if (createTable) {
-      try {
-        dynamoDBClient.deleteTable(
-          DeleteTableRequest.builder().tableName(this.tableName).build()
-        );
-      } catch (ResourceNotFoundException rnfe) {
-        log.warn("Dynamo table not found");
-      }
-
-      this.table.createTable(builder ->
-          builder
-            .globalSecondaryIndices(builder3 ->
-              builder3
-                .indexName("idx_global_customerId")
-                .projection(builder2 ->
-                  builder2.projectionType(ProjectionType.ALL)
-                )
-                .provisionedThroughput(builder4 ->
-                  builder4.writeCapacityUnits(1L).readCapacityUnits(1L)
-                )
-            )
-            .provisionedThroughput(b ->
-              b.readCapacityUnits(1L).writeCapacityUnits(1L).build()
-            )
-        );
-
-      this.dynamoDBClient.waiter()
-        .waitUntilTableExists(b -> b.tableName(this.tableName));
+    if (!createTable) {
+      return;
     }
+    // This flag means create-if-missing. Never delete an existing cart table.
+    try {
+      dynamoDBClient.describeTable(b -> b.tableName(tableName));
+    } catch (ResourceNotFoundException missing) {
+      try {
+        this.table.createTable(builder ->
+          builder
+            .globalSecondaryIndices(index ->
+              index
+                .indexName("idx_global_customerId")
+                .projection(projection ->
+                  projection.projectionType(ProjectionType.ALL)
+                )
+                .provisionedThroughput(capacity ->
+                  capacity.writeCapacityUnits(1L).readCapacityUnits(1L)
+                )
+            )
+            .provisionedThroughput(capacity ->
+              capacity.writeCapacityUnits(1L).readCapacityUnits(1L)
+            )
+        );
+      } catch (ResourceInUseException race) {
+        log.info("Cart table {} was created by another initializer", tableName);
+      }
+    }
+    // Validate after every path, including a concurrent creator winning the race.
+    long deadline =
+      System.nanoTime() + java.time.Duration.ofSeconds(30).toNanos();
+    while (System.nanoTime() < deadline) {
+      try {
+        var description = dynamoDBClient
+          .describeTable(b -> b.tableName(tableName))
+          .table();
+        if (description.tableStatus() == TableStatus.ACTIVE) {
+          var index = description
+            .globalSecondaryIndexes()
+            .stream()
+            .filter(i -> "idx_global_customerId".equals(i.indexName()))
+            .findFirst()
+            .orElseThrow(() ->
+              new IllegalStateException(
+                "Cart table " +
+                  tableName +
+                  " exists without idx_global_customerId; refusing to delete data"
+              )
+            );
+          boolean validKey =
+            index.keySchema().size() == 1 &&
+            index
+              .keySchema()
+              .stream()
+              .anyMatch(
+                k ->
+                  k.keyType() == KeyType.HASH &&
+                  "customerId".equals(k.attributeName())
+              );
+          boolean validTableKey =
+            description.keySchema().size() == 1 &&
+            description
+              .keySchema()
+              .stream()
+              .anyMatch(
+                k ->
+                  k.keyType() == KeyType.HASH && "id".equals(k.attributeName())
+              );
+          if (
+            !validKey ||
+            !validTableKey ||
+            index.projection().projectionType() != ProjectionType.ALL
+          ) {
+            throw new IllegalStateException(
+              "Cart table " +
+                tableName +
+                " has incompatible schema; refusing to delete data"
+            );
+          }
+          if (index.indexStatus() == IndexStatus.ACTIVE) {
+            return;
+          }
+        }
+      } catch (ResourceNotFoundException pending) {
+        // DynamoDB may not expose a concurrently created table immediately.
+      }
+      try {
+        Thread.sleep(250);
+      } catch (InterruptedException interrupted) {
+        Thread.currentThread().interrupt();
+        throw new IllegalStateException(
+          "Interrupted while waiting for cart table " + tableName,
+          interrupted
+        );
+      }
+    }
+    throw new IllegalStateException(
+      "Timed out waiting for cart table and GSI " + tableName
+    );
   }
 
   @Override
@@ -145,10 +219,9 @@ public class DynamoDBCartService
   ) {
     String hashKey = hashKey(customerId, itemId);
 
-    DynamoItemEntity item =
-      this.table.getItem(
-          Key.builder().partitionValue(hashKey(customerId, itemId)).build()
-        );
+    DynamoItemEntity item = this.table.getItem(
+      Key.builder().partitionValue(hashKey(customerId, itemId)).build()
+    );
 
     if (item != null) {
       item.setQuantity(item.getQuantity() + quantity);
@@ -163,8 +236,9 @@ public class DynamoDBCartService
 
   @Override
   public List<DynamoItemEntity> items(String customerId) {
-    DynamoDbIndex<DynamoItemEntity> index =
-      this.table.index("idx_global_customerId");
+    DynamoDbIndex<DynamoItemEntity> index = this.table.index(
+      "idx_global_customerId"
+    );
     QueryConditional q = QueryConditional.keyEqualTo(
       Key.builder().partitionValue(customerId).build()
     );
@@ -183,8 +257,8 @@ public class DynamoDBCartService
   public Optional<DynamoItemEntity> item(String customerId, String itemId) {
     return Optional.of(
       this.table.getItem(
-          Key.builder().partitionValue(hashKey(customerId, itemId)).build()
-        )
+        Key.builder().partitionValue(hashKey(customerId, itemId)).build()
+      )
     );
   }
 

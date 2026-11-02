@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: carts
+spec:
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    spec:
+      containers:
+      - $patch: replace
+      - name: carts
+        env:
+        - name: JAVA_OPTS
+          value: -XX:MaxRAMPercentage=60.0 -Djava.security.egd=file:/dev/urandom
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: carts-local
+              key: AWS_ACCESS_KEY_ID
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: carts-local
+              key: AWS_SECRET_ACCESS_KEY
+        envFrom:
+        - configMapRef:
+            name: carts-config
+        securityContext:
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+        image: public.ecr.aws/aws-containers/retail-store-sample-cart:1.6.3
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8080
+          initialDelaySeconds: 10
+        resources:
+          limits:
+            memory: 512Mi
+          requests:
+            cpu: 256m
+            memory: 512Mi
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-volume

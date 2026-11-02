@@ -1,0 +1,46 @@
+flowchart TB
+    Git["GitHub Fork main"]
+    subgraph Mac["本地 Mac · 运行架构"]
+        Browser["浏览器"]
+        Agent["原生 Jenkins Agent · 单执行器<br/>显式 PATH / JAVA_HOME / DOCKER_HOST / KUBECONFIG"]
+        Forward["127.0.0.1 临时端口<br/>后端 topology 与 Orders 查询"]
+        subgraph Docker["Docker Desktop · 共享 6 核 / 8 GiB"]
+            Jenkins["Jenkins 控制器<br/>127.0.0.1:8080 · 持久卷"]
+            Registry["Registry<br/>127.0.0.1:5001 · 持久卷"]
+            Build["镜像打包 / Testcontainers<br/>串行执行，实测峰值"]
+            subgraph Kind["kind retail-lab · 单节点"]
+                API["API Server"]
+                Runtime["节点 containerd"]
+                State["retail/release-state<br/>lastGood + pending"]
+                subgraph Retail["retail 命名空间"]
+                    UI["UI · NodePort 30080"]
+                    Catalog["Catalog"] --> MySQL["MySQL + PVC"]
+                    Carts["Carts"] --> Dynamo["DynamoDB Local + PVC<br/>StatefulSet / dbPath / sharedDb"]
+                    Checkout["Checkout"] --> Redis["Redis 临时会话"]
+                    Checkout --> Orders["Orders"]
+                    Orders --> Postgres["PostgreSQL + PVC"]
+                    Orders --> Rabbit["RabbitMQ<br/>仅验收重连，不承诺消息恢复"]
+                    UI --> Catalog
+                    UI --> Carts
+                    UI --> Checkout
+                    UI --> Orders
+                end
+            end
+        end
+        Jenkins -->|"轮询拉取，每 2 分钟"| Git
+        Agent -->|"检出确定提交"| Git
+        Jenkins -->|"调度"| Agent
+        Agent -->|"镜像打包和测试依赖"| Build
+        Agent -->|"push；读取 Registry digest"| Registry
+        Runtime -->|"内部网络拉取镜像"| Registry
+        Agent -->|"专用身份：发布、状态记录、port-forward"| API
+        API -->|"更新应用 Deployment"| Retail
+        API --> State
+        Agent -->|"HTTP 冒烟"| UI
+        Browser -->|"127.0.0.1:8888"| UI
+        Agent --> Forward
+        Forward -.->|"经 API Server 的 port-forward 隧道"| Orders
+        Forward -.-> Catalog
+        Forward -.-> Carts
+        Forward -.-> Checkout
+    end

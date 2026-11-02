@@ -1,0 +1,101 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: retail
+resources:
+- namespace.yaml
+- base/retail.yaml
+- storage.yaml
+- dynamodb.yaml
+- release-rbac.yaml
+configMapGenerator:
+- name: catalog-config
+  literals:
+  - RETAIL_CATALOG_PERSISTENCE_PROVIDER=mysql
+  - RETAIL_CATALOG_PERSISTENCE_ENDPOINT=catalog-mysql:3306
+  - RETAIL_CATALOG_PERSISTENCE_DB_NAME=catalog
+  - RETAIL_CATALOG_SEARCH_ENABLED=false
+- name: carts-config
+  literals:
+  - RETAIL_CART_PERSISTENCE_PROVIDER=dynamodb
+  - RETAIL_CART_PERSISTENCE_DYNAMODB_TABLE_NAME=Items
+  - RETAIL_CART_PERSISTENCE_DYNAMODB_CREATE_TABLE=true
+  - RETAIL_CART_PERSISTENCE_DYNAMODB_ENDPOINT=http://carts-dynamodb:8000
+  - AWS_REGION=us-east-1
+- name: orders-config
+  literals:
+  - RETAIL_ORDERS_MESSAGING_PROVIDER=rabbitmq
+  - RETAIL_ORDERS_MESSAGING_RABBITMQ_ADDRESSES=orders-rabbitmq:5672
+  - RETAIL_ORDERS_PERSISTENCE_PROVIDER=postgres
+  - RETAIL_ORDERS_PERSISTENCE_ENDPOINT=orders-postgresql:5432
+  - RETAIL_ORDERS_PERSISTENCE_NAME=orders
+- name: checkout-config
+  literals:
+  - RETAIL_CHECKOUT_PERSISTENCE_PROVIDER=redis
+  - RETAIL_CHECKOUT_PERSISTENCE_REDIS_URL=redis://checkout-redis:6379
+  - RETAIL_CHECKOUT_ENDPOINTS_ORDERS=http://orders:80
+- name: ui-config
+  literals:
+  - RETAIL_UI_THEME=default
+  - RETAIL_UI_ENDPOINTS_CATALOG=http://catalog
+  - RETAIL_UI_ENDPOINTS_CARTS=http://carts
+  - RETAIL_UI_ENDPOINTS_CHECKOUT=http://checkout
+  - RETAIL_UI_ENDPOINTS_ORDERS=http://orders
+  - RETAIL_UI_SEARCH_ENABLED=false
+secretGenerator:
+- name: catalog-db
+  envs:
+  - .secrets/catalog-db.env
+  options:
+    disableNameSuffixHash: true
+- name: orders-db
+  envs:
+  - .secrets/orders-db.env
+  options:
+    disableNameSuffixHash: true
+- name: orders-rabbitmq
+  envs:
+  - .secrets/orders-rabbitmq.env
+  options:
+    disableNameSuffixHash: true
+- name: carts-local
+  envs:
+  - .secrets/carts-local.env
+  options:
+    disableNameSuffixHash: true
+patches:
+- path: catalog-patch.yaml
+- path: carts-patch.yaml
+- path: orders-patch.yaml
+- path: checkout-patch.yaml
+- path: ui-patch.yaml
+- path: catalog-mysql-patch.yaml
+- path: orders-postgresql-patch.yaml
+- path: orders-rabbitmq-patch.yaml
+- patch: "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: carts-dynamodb\n\
+    $patch: delete"
+- target:
+    kind: Service
+    name: ui
+  patch: "- op: replace\n  path: /spec/type\n  value: NodePort\n- op: add\n  path:\
+    \ /spec/ports/0/nodePort\n  value: 30080"
+- target:
+    kind: Deployment
+    name: checkout-redis
+  patch: "- op: add\n  path: /spec/template/spec/containers/0/resources\n  value:\n\
+    \    requests: {memory: 32Mi, cpu: 50m}\n    limits: {memory: 96Mi}"
+images:
+- name: public.ecr.aws/docker/library/mysql:8.0
+  newName: localhost:5001/dependencies/mysql
+  digest: sha256:b11e04fabcbb03ef15ad731715a65068eccdadac0d0dc9e2dfc86f5bd36f97f3
+- name: public.ecr.aws/docker/library/postgres:16.1
+  newName: localhost:5001/dependencies/postgres
+  digest: sha256:ac5107909216518d14bfa959af8f5db73cb2de1b9172ee0e9deb77dc619f9ba0
+- name: public.ecr.aws/docker/library/rabbitmq:3-management
+  newName: localhost:5001/dependencies/rabbitmq
+  digest: sha256:400a257cf7dbf04765d00ffebe58462176cdc81e3b8e42537a9e1c60bd0d8077
+- name: public.ecr.aws/aws-dynamodb-local/aws-dynamodb-local:1.25.1
+  newName: localhost:5001/dependencies/aws-dynamodb-local
+  digest: sha256:2efa4f3c2cb54096f028fdf36450ede2c5a278d5e7af707fcc622ed58c24aa2e
+- name: redis:6.0-alpine
+  newName: localhost:5001/dependencies/redis
+  digest: sha256:673a0996e5546443648548b5c888ec7d6afaa096540f24c8047c1c6aabb3ac7f

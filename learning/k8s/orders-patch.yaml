@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders
+spec:
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    spec:
+      containers:
+      - $patch: replace
+      - name: orders
+        env:
+        - name: JAVA_OPTS
+          value: -XX:MaxRAMPercentage=60.0 -Djava.security.egd=file:/dev/urandom
+        - name: RETAIL_ORDERS_PERSISTENCE_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: orders-db
+              key: RETAIL_ORDERS_PERSISTENCE_USERNAME
+        - name: RETAIL_ORDERS_PERSISTENCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: orders-db
+              key: RETAIL_ORDERS_PERSISTENCE_PASSWORD
+        - name: RETAIL_ORDERS_MESSAGING_RABBITMQ_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: orders-rabbitmq
+              key: RETAIL_ORDERS_MESSAGING_RABBITMQ_USERNAME
+        - name: RETAIL_ORDERS_MESSAGING_RABBITMQ_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: orders-rabbitmq
+              key: RETAIL_ORDERS_MESSAGING_RABBITMQ_PASSWORD
+        envFrom:
+        - configMapRef:
+            name: orders-config
+        securityContext:
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+        image: public.ecr.aws/aws-containers/retail-store-sample-orders:1.6.3
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8080
+          initialDelaySeconds: 10
+        resources:
+          limits:
+            memory: 512Mi
+          requests:
+            cpu: 256m
+            memory: 512Mi
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-volume

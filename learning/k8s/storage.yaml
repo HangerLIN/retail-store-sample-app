@@ -1,0 +1,43 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: retail-retain
+provisioner: rancher.io/local-path
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: catalog-mysql
+spec:
+  accessModes:
+  - ReadWriteOnce
+  storageClassName: retail-retain
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: orders-postgresql
+spec:
+  accessModes:
+  - ReadWriteOnce
+  storageClassName: retail-retain
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: carts-dynamodb
+spec:
+  accessModes:
+  - ReadWriteOnce
+  storageClassName: retail-retain
+  resources:
+    requests:
+      storage: 1Gi

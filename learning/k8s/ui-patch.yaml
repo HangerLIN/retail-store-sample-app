@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ui
+spec:
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    spec:
+      containers:
+      - $patch: replace
+      - name: ui
+        env:
+        - name: JAVA_OPTS
+          value: -XX:MaxRAMPercentage=60.0 -Djava.security.egd=file:/dev/urandom
+        - name: METADATA_KUBERNETES_POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: METADATA_KUBERNETES_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: METADATA_KUBERNETES_NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        envFrom:
+        - configMapRef:
+            name: ui-config
+        securityContext:
+          capabilities:
+            add:
+            - NET_BIND_SERVICE
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+        image: public.ecr.aws/aws-containers/retail-store-sample-ui:1.6.3
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8080
+          initialDelaySeconds: 10
+        resources:
+          limits:
+            memory: 512Mi
+          requests:
+            cpu: 128m
+            memory: 512Mi
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-volume
