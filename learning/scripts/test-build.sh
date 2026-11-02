@@ -8,7 +8,7 @@ case "$service" in
   carts|orders|ui)
     folder="$service"; [ "$service" != carts ] || folder=cart
     rm -rf "src/$folder/target/surefire-reports"
-    (cd "src/$folder"; ./mvnw -s "../../learning/maven-settings.xml" --no-transfer-progress -Dapi.version="$DOCKER_API_VERSION" package -Dspring-boot.start.skip=true -Dspring-boot.stop.skip=true)
+    (cd "src/$folder"; ./mvnw -s "../../learning/maven-settings.xml" --no-transfer-progress -Dapi.version="$DOCKER_API_VERSION" clean package -Dspring-boot.start.skip=true -Dspring-boot.stop.skip=true)
     "$LAB_HOME/python/bin/python" - "$folder" <<'PY'
 import sys, glob, xml.etree.ElementTree as E
 files=glob.glob('src/'+sys.argv[1]+'/target/surefire-reports/TEST-*.xml')
