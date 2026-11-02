@@ -15,7 +15,7 @@
 - [x] Jenkins 从 GitHub 拉取、测试、构建、发布成功。
 - [x] 中断留下 pending 后能恢复 lastGood。
 - [x] 构建期间记录总体内存、Docker OOM、Pod 重启信息。
-- [ ] 文档提交按 lastGood.sourceSha 判定跳过。
+- [x] 文档提交按 lastGood.sourceSha 判定跳过（Jenkins #6）。
 - [x] stop/start 同一批容器后数据仍在。
 - [ ] Docker Desktop 重启验收（需安排重启窗口）。
 - [ ] Mac 重启验收（需安排重启窗口）。

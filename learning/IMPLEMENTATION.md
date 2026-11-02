@@ -45,3 +45,5 @@ Jenkins 构建 #3 在五个服务测试和镜像推送完成后，Orders 已更�
 - kind 节点、Jenkins、Registry 均配置 unless-stopped。Docker Desktop / Mac 整体重启仍未执行，不将普通容器重启冒充该验收。
 
 #5 构建的 Docker 总占用采样峰值约 3.65 GiB，保留 8 GiB 配额。采样间隔约 5 秒，短于采样间隔的瞬时峰值可能未捕获；同时使用 OOM 事件与重启状态佐证。
+
+纯文档提交 `2b18d79f3f7b727650e7057c0a6a83f40b47ea4a` 自动触发 Jenkins #6，结果 SUCCESS；Test and build / Deploy, verify and record 均明确跳过，未复用旧测试报告。lastGood.sourceSha 仍指向已发布的 `2c9886e3b48a41c7c8f5d07d6c34aa6c54427e9d`。
