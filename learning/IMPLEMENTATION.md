@@ -8,10 +8,13 @@
 - Jenkins 2.580.2 控制器、Registry 位于 Docker Desktop；原生 Mac Agent 通过 WebSocket 连接，单执行器，登录时通过 LaunchAgent 启动。
 - 60 项真实测试通过：Carts 16、Orders 6、UI 11、Catalog 15（含子测试）、Checkout 12。每个服务均断言实际测试数量非零。
 - Carts 初始化改为幂等创建，覆盖空表、重启保留数据、GSI 缺失拒绝破坏、并发初始化。
-- 所有应用及依赖使用本地 Registry digest。应用 spec、Registry 和 Pod imageID 已交叉验证。
+- 所有应用、依赖和构建基础镜像使用本地 Registry digest。应用 spec、Registry 和 Pod imageID 已交叉验证。
 - 使用受限发布身份走完首页、商品、加购、配送、模拟支付、Orders 读回。首笔实测订单：`f999e6c6-0413-42a5-9850-b9b23dbb4183`。
 - `pods/exec` create、Secret get、PVC delete 均返回 no；真实 port-forward 和点名 Deployment rollout 成功。
-- 初始整体空闲快照：kind 约 2.54 GiB，Jenkins 332 MiB，Registry 65 MiB，既有 timescaledb 91 MiB，总计约 3.01 GiB。低于设计中的约 5 GiB 判断线，暂保留 Docker 8 GiB；构建峰值仍需实测。
+- 初始整体空闲快照：kind 约 2.54 GiB，Jenkins 332 MiB，Registry 65 MiB，既有 timescaledb 91 MiB，总计约 3.01 GiB。低于设计中的约 5 GiB 判断线，暂保留 Docker 8 GiB；完整构建已观测峰值约 3.55 GiB，Docker OOM 事件为 0；控制器 StartedAt / RestartCount 在构建和 Agent 中断前后保持一致。
+
+- 连续加购期间重建 DynamoDB：32 次已确认写入全部保留，观测最多 1 个 DynamoDB Pod，无 database is locked。重建期间有 1 次临时请求错误，该请求可能已落库，因此读回 33 条；不把重启描述为零中断或恰好一次处理。
+- MySQL 插入独立验证标记，Pod 重建后标记仍在；测试专用表已清理。Carts / PostgreSQL / RabbitMQ 重启后的完整下单也通过。
 
 ## 对 v3 设计的具体落实
 
@@ -26,3 +29,9 @@
 ## 尚需完成或单独安排的验证
 
 请以 CHECKLIST.md 的勾选和 Jenkins 实际结果为准。Docker Desktop 与整机重启会影响其他项目，不在无人值守流程中执行；保留为明确的人工验收项。
+
+## 发布中断演练
+
+Jenkins 构建 #3 在五个服务测试和镜像推送完成后，Orders 已更新、其他四个应用尚未更新时，停止 Agent 并终止发布子进程，构建以 137 失败。集群同时保存原 lastGood 与 pending，实测仅 Orders 镜像发生变化。恢复 Agent 后手动执行 #4（ACTION=reconcile）成功，五个镜像恢复到 lastGood，完整下单通过，pending 清空。
+
+每次作业开始清理本次报告目录，恢复/文档跳过作业不复用旧测试报告；Java clean package 与每服务测试数量断言进一步防止陈旧产物误报。

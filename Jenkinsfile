@@ -6,6 +6,11 @@ pipeline {
   stages {
     stage('Preflight and reconcile') {
       steps {
+        sh '''
+          rm -rf reports
+          mkdir -p reports
+          rm -rf src/cart/target/surefire-reports src/orders/target/surefire-reports src/ui/target/surefire-reports
+        '''
         sh 'bash learning/scripts/ci.sh preflight'
         script { sh "bash learning/scripts/ci.sh ${params.ACTION == 'reconcile' ? 'reconcile' : 'prepare'}" }
         script { env.PUBLISH = params.ACTION == 'deploy' ? sh(script: 'bash learning/scripts/ci.sh needed', returnStdout: true).trim() : 'no' }
