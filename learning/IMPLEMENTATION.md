@@ -35,3 +35,13 @@
 Jenkins 构建 #3 在五个服务测试和镜像推送完成后，Orders 已更新、其他四个应用尚未更新时，停止 Agent 并终止发布子进程，构建以 137 失败。集群同时保存原 lastGood 与 pending，实测仅 Orders 镜像发生变化。恢复 Agent 后手动执行 #4（ACTION=reconcile）成功，五个镜像恢复到 lastGood，完整下单通过，pending 清空。
 
 每次作业开始清理本次报告目录，恢复/文档跳过作业不复用旧测试报告；Java clean package 与每服务测试数量断言进一步防止陈旧产物误报。
+
+## 自动发布与停止/启动
+
+- Jenkins #5 由 `Started by an SCM change` 自动触发，提交 `2c9886e3b48a41c7c8f5d07d6c34aa6c54427e9d`，结果 SUCCESS。60 项测试通过，按 digest 发布、订单持久化读回、lastGood 记录全部完成。
+- #5 的五个镜像、运行 imageID、提交 SHA 和虚构订单证据见该构建的归档。Docker OOM 事件为 0，构建期间控制器未重启。
+- 实验容器 stop/start 后三个容器 ID 不变；原订单 `eb65df38-c4c0-411f-a184-f514b95eef9e` 和 33 条购物车数据保留，新订单 `4d7503b6-cd3c-464c-9f9d-4a9d2d37794e` 创建成功，Agent 自动连接。
+- 全部依赖同时启动时有约一分钟恢复窗口，Orders 在依赖尚未可用时额外重启一次后自愈；这是本地单节点环境，未承诺零停机。
+- kind 节点、Jenkins、Registry 均配置 unless-stopped。Docker Desktop / Mac 整体重启仍未执行，不将普通容器重启冒充该验收。
+
+#5 构建的 Docker 总占用采样峰值约 3.65 GiB，保留 8 GiB 配额。采样间隔约 5 秒，短于采样间隔的瞬时峰值可能未捕获；同时使用 OOM 事件与重启状态佐证。

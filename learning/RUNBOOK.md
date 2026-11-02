@@ -37,9 +37,9 @@ Maven 学习配置只使用 Maven Central，避免上游 Spring milestone 仓库
 
 已建立的本地环境不需要重复初始化。重建时：
 
-1. 准备 Docker Desktop、JDK 21、Node 22、Go、kind v0.33.0、kubectl v1.37.0、Python/PyYAML；工具与虚拟环境放入忽略的 `env/`。
+1. 准备 Docker Desktop、JDK 21、Node 22、Go、kind v0.33.0、kubectl v1.37.0、Python/PyYAML 6.0.3；工具与虚拟环境放入忽略的 `env/`。
 2. 创建带持久卷、仅监听 127.0.0.1:5001 的 `retail-registry`；创建 `learning/kind.yaml` 定义的集群。
-3. 运行 `learning/scripts/node-config.sh` 配置 containerd Registry 与 NO_PROXY、kubelet 内存预留。kind 重建后必须重跑。节点继承宿主机 127.0.0.1 代理时，公共拉取会失败；本方案依赖镜像也缓存在本地 Registry。
+3. 运行 `learning/scripts/node-config.sh` 配置 containerd Registry 与 NO_PROXY、kubelet 内存预留。kind 重建后必须重跑；另外执行 `docker update --restart unless-stopped retail-lab-control-plane`，使运行中的节点随 Docker 恢复。节点继承宿主机 127.0.0.1 代理时，公共拉取会失败；本方案依赖镜像也缓存在本地 Registry。
 4. 管理员执行 `dependencies.py` 准备五个依赖、`base-images.py` 缓存固定摘要的构建基础镜像；审阅生成的本地 digest。
 5. 各服务运行 `test-build.sh <service>` 和 `image.sh <service> <tag>`，产生 `reports/<service>-image.json`。生产依赖与测试报告必须完整，不能拿上游购物车镜像替代修复版。
 6. 管理员使用 `bootstrap.py`：初始化本地随机密码，部署清单，生成受限发布配置。再次执行会保留 release-state，但会滚动基础设施配置；先审阅变更。
