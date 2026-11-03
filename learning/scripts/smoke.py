@@ -42,9 +42,23 @@ def forward(service):
             proc.wait()
 
 
+MAX_JSON_BYTES = 5 * 1024 * 1024
+
+
 def getjson(url):
     with urllib.request.urlopen(url, timeout=25) as r:
-        return json.load(r)
+        payload = r.read(MAX_JSON_BYTES + 1)
+        assert len(payload) <= MAX_JSON_BYTES, "JSON response exceeds 5 MiB limit"
+        return json.loads(payload)
+
+
+def verify_order(orders, orderid, marker):
+    assert isinstance(orders, list), "Orders response must be an array"
+    matches = [o for o in orders if isinstance(o, dict) and o.get("id") == orderid]
+    assert len(matches) == 1, "Expected exactly one order with the new order ID"
+    address = matches[0].get("shippingAddress") or {}
+    assert address.get("firstName") == marker, "New order marker mismatch"
+    assert address.get("email") == marker + "@example.invalid", "New order email mismatch"
 
 
 def verify():
@@ -124,10 +138,7 @@ def verify():
     orderid = match.group(1)
     with forward("orders") as base:
         orders = getjson(base + "/orders")
-    evidence = json.dumps(orders)
-    assert orderid in evidence and marker in evidence, (
-        "New order missing from Orders/PostgreSQL"
-    )
+    verify_order(orders, orderid, marker)
     result = {
         "orderId": orderid,
         "marker": marker,

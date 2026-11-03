@@ -58,3 +58,42 @@ Jenkins 构建 #3 在五个服务测试和镜像推送完成后，Orders 已更�
 - Carts、Orders 在依赖尚未就绪时各额外重试一次，约一分钟后恢复。这是启动顺序导致的短暂不可用，不是零停机。
 - 重启前订单 `100b57ab-a0c5-4c0f-b052-0392a36d38e9` 仍可读取，购物车全部 33 条记录逐项比对一致；重启后新增订单 `b6d43eb3-c6be-4bb8-b238-f1fd674e39aa` 成功。
 - 本机详细前后快照及验证日志保存在忽略的 `env/reports/desktop-restart/`；快照不包含 Secret 值。
+
+## 架构评审补充（2026-11-03）
+
+本节区分真实集群验收和脚本回归测试。Deploy/Verify 异常自动回滚、recoveryFailed 后修复、Jenkins 中真实测试失败的故障注入尚未执行；不以 #3/#4 中断演练代替。Redis 单独重启、控制器删除重建复用卷、SCM 页面可见改动也未单独验收。
+
+### 构建编号与证据保留
+
+| 构建 | 实际含义 | 触发方式 |
+| --- | --- | --- |
+| #1 | 初始化时缺 Jenkinsfile，失败 | SCM |
+| #2 | 构建网络问题，失败；不是测试失败注入 | 手动 |
+| #3 | Orders 更新后强制终止发布，失败；留下 pending | 手动 |
+| #4 | ACTION=reconcile 恢复成功 | 手动 |
+| #5 | 60 项应用测试、五镜像发布、真实下单成功 | SCM，API 原因为 Started by an SCM change |
+| #6–#9 | 纯文档提交检查后跳过，历史结果 SUCCESS | SCM |
+
+已对 #3、#4、#5、#6 调用 Keep forever，并读回确认 kept=true。普通构建仍保留 10 次。另保存 [build-5.json](evidence/build-5.json)，含 release、image evidence、smoke 与测试数量，避免仅依赖轮转中的链接。该文件只含本地示例业务证据，不含凭据。
+
+#5：源码 `2c9886e3b48a41c7c8f5d07d6c34aa6c54427e9d`；Carts 16、Orders 6、UI 11、Checkout 12、Catalog 15（含子测试），共 60 项；Java 33 通过、0 失败、0 跳过，Jest 12 通过，Go 15 通过，Docker OOM 事件 0。五个完整镜像摘要如下：
+
+| 服务 | Registry 镜像引用 |
+| --- | --- |
+| orders | `localhost:5001/retail/orders@sha256:3b20a8cfd6ac4c99c852ef98e51525854423cdf51cfa41d60ed1b840bc3029b0` |
+| checkout | `localhost:5001/retail/checkout@sha256:6718398f6f59ca006496fdee65ae5ea5e94d5a5f9278fe8d7ddef151171ee782` |
+| carts | `localhost:5001/retail/carts@sha256:56c14a0e5c55ce7c4d582c1c7908363516175e4efc41c7834d612ba8d5f9daf8` |
+| catalog | `localhost:5001/retail/catalog@sha256:6b634ffa77a3219c0da73106895d95a463642b093a53d9de13d1c92e7c51b2db` |
+| ui | `localhost:5001/retail/ui@sha256:679eebffb5f962187a95ff32ee56e7ff2a13cee89f50151b4e3e1cb42c59c23d` |
+
+### 本轮验证
+
+- 新增 21 项脚本测试，含 needed 的 recoveryFailed/docs 组合、pending/镜像漂移组合、失败回滚、回滚失败、Record 前后中断、CAS 冲突和配置接纳拒绝路径。测试使用假外部命令，不冒充真实故障注入。
+- 实际运行 ci.sh 的隔离编排测试逐一让五个服务测试失败，确认均无 image.sh 调用；成功时五个 test 调用全在第一个 push 前。
+- 严格订单匹配已用受限发布身份真实下单通过：`d1d14cd2-0c42-4373-b455-fbdbecddd0ab`。
+- adopt-config 演练：临时向 UI ConfigMap 加入无业务影响键，未应用时因新 ConfigMap 不存在被拒绝；应用并 rollout 后因基线指纹不同被拒绝；管理员接纳时下单 `7e0f9fbb-4c9b-4d04-b41b-8876d5cdf13f` 成功。恢复原配置并再次接纳，下单 `b7caca6e-e94f-4eb5-92e1-59132ffc9453` 成功；images/sourceSha/verifiedAt 始终不变，最终 state 内容与演练前一致。日志在本机 env/reports/config-adoption/。
+- 演练辅助断言首次只匹配“配置漂移”文本，遗漏了“新哈希 ConfigMap 不存在”的预期拒绝，因此第一次辅助脚本失败；finally 已恢复配置，补齐辅助断言后完整演练通过。未将该次辅助失败算作应用故障。
+- 当前 #5 Checkout 生产镜像 `/app/node_modules` 中 `.node` 数量为 0；开发依赖中存在 darwin 原生模块，不能用开发目录的扫描结果代表生产包。新增检查限定生产打包目录。
+- Catalog 实际工具链 `go1.25.0 darwin/arm64`。本轮增加工具链报告、Mac memory_pressure/swap、Pod 前后状态采样；历史 #5 不因此获得原本没有采集的 Mac 内存证据。
+- 配置演练后 MySQL Pod RESTARTS=2，最近终止原因 Unknown；十个 Pod 均 Ready，当前可见的最近终止记录无 OOMKilled。这些重启包含此前 Docker 重启，不应重写为“从未重启”或“历史从未 OOM”。
+- 购物车 32/33 的差异保留不确定性：32 个请求已收到成功，另一个返回临时错误的请求可能已经落库；没有足够证据认定为重试落地，也不能称其为预置数据。

@@ -1,12 +1,12 @@
 # 本地网店、Kubernetes 与 Jenkins：现状架构
 
-核验时间：2026-11-03 11:04–11:10，Asia/Shanghai。本文描述已经落地的系统；历史设计见 [DESIGN.md](DESIGN.md)，操作步骤见 [RUNBOOK.md](RUNBOOK.md)，验收证据见 [IMPLEMENTATION.md](IMPLEMENTATION.md)。
+原始运行快照：2026-11-03 11:04–11:10；评审修订：2026-11-03，Asia/Shanghai。本文描述已经落地的系统；历史设计见 [DESIGN.md](DESIGN.md)，操作步骤见 [RUNBOOK.md](RUNBOOK.md)，验收证据见 [IMPLEMENTATION.md](IMPLEMENTATION.md)。
 
 ## 1. 当前结论
 
 完整网店与 Jenkins 发布链路已经在这台 Mac 上运行。五个应用、五个依赖运行于本地单节点 kind；Jenkins 控制器和镜像仓库运行于 Docker Desktop；构建 Agent 是 Mac 原生进程。本期没有创建或使用 AWS 云资源。
 
-源码提交已经走通过真实测试、镜像构建、推送、顺序发布、完整下单、订单读回和发布记录。发布中断恢复、数据库 Pod 重建、实验容器 stop/start、Docker Desktop 重启均有实际验证。**Mac 整机重启尚未验收。**
+源码提交已经走通过真实测试、镜像构建、推送、顺序发布、完整下单、订单读回和发布记录。发布中断恢复、数据库 Pod 重建、实验容器 stop/start、Docker Desktop 重启均有实际验证。**Mac 整机重启尚未验收；Deploy/Verify 失败自动回滚、recoveryFailed 后修复发布尚未做真实集群故障注入。** 本轮新增脚本回归测试覆盖这些分支，不能替代集群演练。
 
 这是一套个人学习环境：单机器、单节点、单副本，发布和重启允许短暂不可用。当前没有高可用、备份恢复自动化、真实支付或生产安全隔离。
 
@@ -24,6 +24,7 @@
 | 业务工作负载 | `retail` 命名空间内 10/10 Pod Running、Ready |
 | 持久卷声明 | MySQL、PostgreSQL、DynamoDB 三个 PVC 均 Bound，各 1 GiB |
 | 发布状态 | `lastGood` 存在，`pending` 不存在，已记录版本的 `recoveryFailed=false` |
+| 线上 digest 与 lastGood | 原始快照及本轮配置接纳演练恢复后均 5/5 一致 |
 | 网店入口 | [http://127.0.0.1:8888](http://127.0.0.1:8888)，本次只读访问返回 HTTP 200 |
 | Jenkins 入口 | [retail-local](http://127.0.0.1:8080/job/retail-local/) |
 
@@ -206,7 +207,7 @@ Preflight 不尝试解释任意环境变量覆盖规则，而是比较仓库渲�
 
 实际密码、Agent secret 和发布 kubeconfig 仅存本地忽略目录，文件权限收紧；不在本文或 Git 中保存值。DynamoDB Local 使用的 AWS 凭据只是本地测试占位值，不是 AWS IAM 凭据。
 
-**配置变更与镜像发布是两条操作路径。** 日常 Jenkins 只发布镜像；基础设施或配置变更由管理员审阅、应用并重新验证。若新配置指纹与 lastGood 不同，现有脚本会停止；当前没有一键迁移旧配置基线的流程，不能把重新执行 bootstrap 当作通用配置升级办法。
+**配置变更与镜像发布是两条操作路径。** 日常 Jenkins 只发布镜像；基础设施或配置变更由管理员审阅、应用并重新验证。若新配置指纹与 lastGood 不同，现有脚本会停止；现在提供管理员 `release.py adopt-config`：要求没有 pending/recoveryFailed、线上五个镜像等于 lastGood，等待 rollout，执行完整业务 Verify 和镜像核对，再次确认配置和镜像未变，最后带原 resourceVersion 仅替换 configFingerprint。images、sourceSha、verifiedAt 保持不变，另存配置接纳报告。操作前暂停 Jenkins，管理员应用已审阅的配置后执行；详细步骤见 RUNBOOK。此命令不适用于数据库迁移、密码轮换或镜像漂移，也不绕过配置与仓库的一致性检查。
 
 ## 6. Jenkins 与构建架构
 
@@ -223,10 +224,10 @@ Agent 由当前 macOS 用户的 LaunchAgent 启动，`RunAtLoad / KeepAlive`，�
 | Jenkins | 2.580.2；插件版本见 [plugins.txt](jenkins/plugins.txt) |
 | Java | Corretto 21.0.5，Maven wrapper 随源码 |
 | Node / Yarn | Node 22.23.4；直接执行仓库内 Yarn 4.11.0 脚本，安装使用 `--immutable` |
-| Go | 原生工具链，`GOTOOLCHAIN=auto` 按项目声明选择版本 |
+| Go | Catalog 实测 `go1.25.0 darwin/arm64`；`GOTOOLCHAIN=auto` 可能联网下载工具链，实际版本写入 `tool-versions.log` |
 | 发布脚本 | Python / PyYAML 6.0.3，本机忽略目录内虚拟环境 |
 
-构建先在原生 Mac Agent 测试和编译，再使用 [learning/docker](docker/) 打包。Java 使用 jar，Catalog 交叉编译 Linux ARM64，Checkout 打包 dist 和生产依赖。上游 Dockerfile 保留。这样减少 Docker VM 内重复编译，但原生编译仍占整台 Mac 的 CPU 和内存。
+构建先在原生 Mac Agent 测试和编译，再使用 [learning/docker](docker/) 打包。Java 使用 jar，Catalog 交叉编译 Linux ARM64，Checkout 打包 dist 和生产依赖。**当前运行镜像使用自定义学习 Dockerfile，不是上游 Dockerfile 的构建产物。** 当前 Checkout 生产镜像未发现 `.node` 文件，打包脚本对生产依赖新增该检查，发现即失败并要求改用 Linux 安装依赖；开发依赖里的原生模块不进入生产镜像。该检查不能证明任意依赖都跨平台兼容，迁移 AWS 时需重新设计 Linux CI，不能直接复制此 macOS 构建路径。上游 Dockerfile 保留。这样减少 Docker VM 内重复编译，但原生编译仍占整台 Mac 的 CPU 和内存。
 
 Testcontainers 通过 Docker socket 启动隔离测试依赖；Carts、Orders、Catalog、Checkout 分别涉及 DynamoDB、PostgreSQL、MySQL、Redis。Java 测试显式适配 daemon API 1.43，socket override 为 `/var/run/docker.sock`。没有通过禁用真实测试或 Ryuk 来取得成功。
 
@@ -241,13 +242,13 @@ Testcontainers 通过 Docker socket 启动隔离测试依赖；Carts、Orders、
 | Checkout | `test:integration`，Jest 串行执行 | 12 |
 | 合计 | 五个服务均断言实际执行数量大于零 | 60 |
 
-Checkout 上游 `test` 的 `exit 0` 不作为测试；当前无 `src` 下单元 spec，执行的是 `test/` 下集成测试。Catalog 也不依赖上游空操作测试入口。每次作业先删除旧报告，Java 使用 clean，避免拿旧报告判成功。
+Checkout 上游 `test` 的 `exit 0` 不作为测试；当前无 `src` 下单元 spec，执行的是 `test/` 下集成测试。Catalog 也不依赖上游空操作测试入口。每次作业先删除旧报告，Java 使用 clean，避免拿旧报告判成功。另有 21 项发布、配置接纳、冒烟和实际 CI shell 编排回归测试，在 preflight 中执行并归档 `release-tests.log`，包括 pending/漂移组合、recoveryFailed 强制构建、回滚失败保留 pending、Record 前后中断、CAS 冲突和跨订单误匹配。表格中的 60 项仍是 #5 的应用测试数量。
 
 Jenkins 的 JUnit 页面收集 Java 33 项；Go JSONL、Jest JSON 与发布证据作为归档，不能把 JUnit 页面计数误认为全部测试数。只改文档或只恢复的作业不会生成一套新的测试结果，也不会冒用上一次报告。
 
 ## 7. 提交、发布与恢复
 
-流水线入口为 [Jenkinsfile](../Jenkinsfile)，核心逻辑为 [release.py](scripts/release.py)。仅信任 Fork 的 main，每约两分钟 SCM 轮询；禁止并发，单次超时 90 分钟，保留最近 10 次构建。
+流水线入口为 [Jenkinsfile](../Jenkinsfile)，核心逻辑为 [release.py](scripts/release.py)。仅信任 Fork 的 main，每约两分钟 SCM 轮询；禁止并发，单次超时 90 分钟，普通构建保留最近 10 次；历史验收 #3–#6 已设为 Keep forever，不受普通轮转删除。#5 关键证据另存入 Git 的 [evidence/build-5.json](evidence/build-5.json)，完整五个 digest 和计数也摘入 IMPLEMENTATION。永久保留仍不是 Jenkins 卷的异地备份。
 
 | 阶段 | 做什么 | 通过标准 |
 | --- | --- | --- |
@@ -255,10 +256,12 @@ Jenkins 的 JUnit 页面收集 Java 33 项；Go JSONL、Jest JSON 与发布证�
 | Preflight | 工具和 Docker 检查、专用 context、配置比对、验证 lastGood 五个镜像可从 Registry 获取 | 不因“网页暂时不健康”直接阻止修复；权限、配置、镜像基础错误必须停止 |
 | Prepare / Reconcile | 检测 pending 或线上镜像偏离 lastGood，尝试恢复 | 正常恢复后清除 pending；特定业务恢复失败可标记后继续修复发布 |
 | Needed | 对比 `lastGood.sourceSha → HEAD` | 仅 `.md`、`.mmd`、`screenshots/**` 变化可跳过；脚本、Jenkinsfile、清单变化不跳过 |
-| Test and build | Orders → Checkout → Carts → Catalog → UI，逐个测试、编译、打包并推送 | 五个服务真实测试均非零且成功，构建期间无 Docker OOM 事件 |
+| Test and build | Orders → Checkout → Carts → Catalog → UI，先完成五个服务的测试和编译，再逐个打包推送 | 五个服务真实测试均非零且成功，构建期间无 Docker OOM 事件 |
 | Deploy | 先保存 pending，再按上述顺序逐个更新镜像，每个等待 rollout，最长 240 秒 | 上一个就绪后才处理下一个，UI 最后 |
 | Verify | topology、完整网店下单、Orders 读回、运行镜像证据 | HTTP 200 或 Pod Ready 均不能单独判成功 |
 | Record | Verify 通过后替换 lastGood 并清除 pending | 镜像集合、源码、配置指纹和验证时间落盘到集群 |
+
+构建描述现在区分 `deployed <sha>`、`reconcile: completed`、`skipped: docs-only or no changes since lastGood`，跳过结果为 NOT_BUILT；空 ACTION 按 deploy 处理，只有明确 reconcile 才进入恢复模式。旧 #6–#9 的 SUCCESS 是历史行为，不能据此认定发布过应用。
 
 这是全量五服务发布，没有受影响服务分析。`learning/` 下修改脚本或清单仍是构建变更，不是整个目录都跳过。使用 lastGood 的源码作 diff 基线，使失败的源码提交不会被后来的纯文档提交掩盖。
 
@@ -309,9 +312,9 @@ SCM 轮询只有检测到变化才触发构建，不是定时修复器。Agent �
 
 ### 7.3 为什么可以相信“下单成功”
 
-[smoke.py](scripts/smoke.py) 使用发布 kubeconfig，先对四个后端建立临时隧道检查 topology，再通过网店真实 HTTP 表单执行首页、商品、加购、地址、配送和模拟支付。它保留会话 Cookie，提取成功页订单 ID，最后从 Orders `/orders` 读回，检查订单 ID 和本次唯一 `smoke-*` 标记。
+[smoke.py](scripts/smoke.py) 使用发布 kubeconfig，先对四个后端建立临时隧道检查 topology，再通过网店真实 HTTP 表单执行首页、商品、加购、地址、配送和模拟支付。它保留会话 Cookie，提取成功页订单 ID，最后从 Orders `/orders` 读回，按本次订单 ID 精确选择唯一对象，再检查该对象 shippingAddress 的 firstName 和 email 等于本次唯一 `smoke-*` 标记与测试邮箱。
 
-Orders 当前查询走 repository.findAll，没有分页；冒烟数据会累积。现有断言是在返回集合中分别检查 ID 和标记，不是数据库直连检查，也没有严格解析为“同一对象的两个字段”；新订单标识与唯一标记提供发布证据，独立的 PostgreSQL 重启读回进一步验证了持久化。这里没有浏览器视觉验收、压力测试或真实支付验证。
+Orders 当前查询走 repository.findAll，没有分页；冒烟数据会累积。JSON 查询有 25 秒超时和 5 MiB 响应上限，超限会失败，不会截断后当成功；当前没有自动清理测试订单。断言已限定同一订单对象，另有“标记落在其他订单”负例测试。这仍是 Orders API 读回而非数据库直连检查，独立的 PostgreSQL 重启读回进一步验证了持久化。这里没有浏览器视觉验收、压力测试或真实支付验证。
 
 ## 8. 权限与信任模型
 
@@ -323,7 +326,9 @@ Orders 当前查询走 repository.findAll，没有分页；冒烟数据会累积
 | namespace 内 Pods、Services | get / list |
 | Pods port-forward | get / create，已用实际 kubectl 1.37 命令验证 |
 | ConfigMap | get 全命名空间；patch / update 仅 `release-state` |
-| Secret、exec、PVC 删除 | 发布身份未授予；实际 `auth can-i` 已验证为 no |
+| Secret、exec、PVC 删除 | 未直接授予，`auth can-i` 为 no；但 Deployment patch 可间接让 Pod 挂载 Secret，因此不是机密隔离 |
+
+发布身份未授予 pods/log 和 events 权限；当前失败诊断主要依靠 rollout 错误、业务验证结果和 Pod 状态快照，日志及事件由管理员查询。此次不添加 AdmissionPolicy 或扩大权限。
 
 凭据使用本地长期 ServiceAccount token，文件权限 600。Jenkins 当前仅供一个学习用户使用，无匿名读取；不是面向多团队的权限设计。
 
@@ -339,7 +344,7 @@ Java 应用使用 `MaxRAMPercentage=60`；Jenkins 容器上限 1 GiB、Java 堆 
 | --- | --- |
 | 本次空闲快照 | kind 2.125 GiB、Jenkins 566.3 MiB、Registry 6.6 MiB、TimescaleDB 91.3 MiB，容器用量合计约 2.77 GiB |
 | #5 完整构建 | Docker 容器总体采样峰值约 3.65 GiB，Docker OOM 事件 0，控制器未重启 |
-| 观测限制 | 约 5 秒采样可能漏瞬时峰值；不包含原生 Mac 编译进程及完整 VM 开销；不是压力测试 |
+| 观测限制 | #5 约 5 秒采样可能漏瞬时峰值，且不包含原生 Mac 编译进程及完整 VM 开销；本轮新增 Mac memory_pressure/swap、Pod 前后重启及终止状态采样，结果随新构建归档；不是压力测试 |
 
 基于已经测到的学习负载，暂保留 8 GiB Docker 配额。不能用 requests 相加或一次构建通过，推导未来任何测试和负载都不会 OOM。
 
@@ -349,15 +354,22 @@ Java 应用使用 `MaxRAMPercentage=60`；Jenkins 容器上限 1 GiB、Java 堆 
 
 | 验收 | 结果与证据 |
 | --- | --- |
-| 五服务真实测试和完整自动发布 | #5 SUCCESS，60 项测试，五个 digest、订单读回和 lastGood 均归档 |
+| 五服务真实测试和完整自动发布 | #5 原因经 Jenkins API 核实为 Started by an SCM change；SUCCESS，60 项测试，五个 digest、订单读回和 lastGood 均归档 |
 | 发布中断 | #3 在仅 Orders 更新后终止 Agent/发布进程，保留混合版本和 pending；#4 reconcile 成功恢复 |
 | 文档提交跳过 | #6 验证跳过测试和发布，不复用旧报告；lastGood 保持 #5 源码 |
 | 配置漂移与发布权限 | provider 覆盖被拒绝；真实 port-forward/rollout 成功，exec/Secret/PVC 删除被拒绝 |
-| Carts 与 DynamoDB 重建 | 购物车保留；连续写入时 32 次已确认写入全部保留，最多一个 DynamoDB Pod，无数据库锁错误；有一次临时请求错误，最终读回 33 条，不承诺恰好一次 |
+| Carts 与 DynamoDB 重建 | 购物车保留；连续写入时 32 次已确认写入全部保留，最多一个 DynamoDB Pod，无数据库锁错误；有一次临时请求错误，最终读回 33 条；额外条目可能是错误返回前已落库的请求，现存证据不能确定是不是重试造成，不能断言为预置数据或恰好一次 |
 | MySQL / PostgreSQL 重建 | MySQL 专用验证标记保留后已清理；已有真实订单读回成功 |
 | RabbitMQ 重启 | Orders 自动重连并继续下单；没有消息恢复结论 |
 | 实验容器 stop/start | 容器 ID 不变，旧订单和购物车保留，新下单成功 |
 | Docker Desktop 重启 | 已获确认并执行；VM boot ID 改变、Mac 启动时间未变；四个容器自动恢复、Agent 重连、10 Pod 就绪、33 条购物车逐项一致、旧订单保留并能新下单 |
+| 测试失败不发布 | 实际 CI shell 使用隔离的假外部命令测试：五个服务任一测试失败，均不调用镜像推送；尚未通过 Jenkins 真实故障提交验证 Registry 与集群不变 |
+| Deploy/Verify 失败自动回滚 | 脚本回归测试通过；真实集群故障注入未做，不能拿 #3/#4 代替 |
+| recoveryFailed 后修复候选发布 | 状态回归测试通过；真实集群故障注入未做 |
+| SCM 后页面可见改动 | SCM 触发已确认；刻意修改可见页面并比较前后效果未单独验收 |
+| Redis 单独重启后重新结账 | 整体重启覆盖过重新结账，单独 Redis 故障演练未做 |
+| Jenkins 控制器删除并重建后复用卷 | 未做；现有 stop/start 和 Docker Desktop 重启不等价 |
+| 配置接纳闭环 | 临时无害 ConfigMap 值导致 preflight 拒绝；apply/rollout/adopt 后通过；恢复原配置再 adopt，lastGood 内容与演练前完全一致 |
 | Mac 整机重启 | **尚未执行，需另行安排窗口** |
 
 重启详细快照在本机忽略目录 `env/reports/desktop-restart/`，不随 Git 分发。可供远程评审的结论记录在 [IMPLEMENTATION.md](IMPLEMENTATION.md)，源码和清单均在仓库；远程评审不能仅凭文档链接重放本机证据。
@@ -401,3 +413,7 @@ stop 会检查没有正在执行的作业，使 Jenkins 停接作业、卸载 Ag
 现在学习的是以后迁移 AWS 也会用到的容器、Kubernetes、CI/CD 和数据边界。kind 不是 EKS，DynamoDB Local 不是托管 DynamoDB，本地 Registry 也不是 ECR。
 
 未来确实需要上云时，再单独设计 kind → EKS、Registry → ECR、数据库 → 适当托管服务的迁移；届时必须补充 IAM、VPC、费用预算、Secret 管理、存储和备份方案。当前不预建这些组件，不因学习目标里包含 AWS 就产生云资源或费用。
+
+### 评审追溯入口
+
+本轮逐项回应、完整源码链接和构建编号解释见 [REVIEW_RESPONSE_V3.md](REVIEW_RESPONSE_V3.md)。#1 初始化缺 Jenkinsfile，#2 构建网络失败，#3 中断演练，#4 手动恢复，#5 SCM 自动发布，#6–#9 均是文档跳过；不能把未说明的编号当作额外故障验收。

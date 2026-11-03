@@ -19,6 +19,11 @@ case "$service" in
     cp src/checkout/package.json src/checkout/yarn.lock "$context/"
     printf 'nodeLinker: node-modules\n' > "$context/.yarnrc.yml"
     (cd "$context"; node ../../.yarn/releases/yarn-4.11.0.cjs install --immutable; node ../../.yarn/releases/yarn-4.11.0.cjs workspaces focus --all --production)
+    "$LAB_HOME/python/bin/python" - "$context/node_modules" <<'PY'
+import pathlib, sys
+native = list(pathlib.Path(sys.argv[1]).rglob('*.node'))
+assert not native, 'Native Node addons found: install production dependencies in Linux before packaging: ' + str(native[:5])
+PY
     recipe=checkout;;
   *) exit 2;;
 esac

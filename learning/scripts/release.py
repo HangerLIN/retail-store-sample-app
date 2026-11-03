@@ -83,12 +83,12 @@ def settings(c):
     return {k: c.get(k, []) for k in ["env", "envFrom", "command", "args"]}
 
 
-def preflight():
+def preflight(adopt=False):
     assert (
         subprocess.check_output(
             ["kubectl", "config", "current-context"], text=True
         ).strip()
-        == "retail-release"
+        == ("kind-retail-lab" if adopt else "retail-release")
     ), "Wrong release context"
     expected = render()
     fingerprint = {}
@@ -114,11 +114,42 @@ def preflight():
     ).hexdigest()
     _, state = readstate()
     if state.get("lastGood"):
-        assert state["lastGood"]["configFingerprint"] == digest, (
+        assert adopt or state["lastGood"]["configFingerprint"] == digest, (
             "Admin config changed: establish a new verified baseline before CI"
         )
         checkimages(state["lastGood"]["images"])
     return digest
+
+
+def adopt_config():
+    """Admin-only workflow: accept verified config without changing release provenance."""
+    fingerprint = preflight(adopt=True)
+    base, state = readstate()
+    good = state.get("lastGood")
+    assert good and not state.get("pending") and not state.get("recoveryFailed"), (
+        "Resolve pending/recovery state before adopting config"
+    )
+    assert imageslive() == good["images"], "Image drift: restore lastGood before adoption"
+    for service in SERVICES:
+        subprocess.run(
+            ["kubectl", "-n", "retail", "rollout", "status",
+             "deployment/" + service, "--timeout=240s"], check=True,
+        )
+    business_verify()
+    evidence(good["images"])
+    assert imageslive() == good["images"], "Images changed during adoption"
+    assert preflight(adopt=True) == fingerprint, "Config changed during adoption"
+    good["configFingerprint"] = fingerprint
+    # Preserve sourceSha, images and release verification time. This is a config event.
+    write(state, base)
+    pathlib.Path("reports").mkdir(exist_ok=True)
+    pathlib.Path("reports/config-adoption.json").write_text(json.dumps({
+        "configFingerprint": fingerprint,
+        "sourceSha": good["sourceSha"],
+        "images": good["images"],
+        "adoptedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }, indent=2))
+    print("Adopted verified configuration; image and source baseline unchanged")
 
 
 def imageslive():
@@ -306,5 +337,7 @@ if __name__ == "__main__":
         publish()
     elif action == "bootstrap":
         publish(True)
+    elif action == "adopt-config":
+        adopt_config()
     else:
         raise SystemExit("Unknown release action")

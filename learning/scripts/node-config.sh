@@ -3,6 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 # Re-run after recreating kind; only configures this lab's node and registry.
 node=retail-lab-control-plane
+docker update --restart unless-stopped "$node"
 docker network inspect kind --format '{{json .Containers}}' | grep -q retail-registry || docker network connect kind retail-registry
 docker exec "$node" mkdir -p /etc/containerd/certs.d/localhost:5001
 docker exec -i "$node" sh -c 'cat > /etc/containerd/certs.d/localhost:5001/hosts.toml' <<'CONFIG'

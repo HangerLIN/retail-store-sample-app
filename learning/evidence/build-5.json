@@ -1,0 +1,87 @@
+{
+  "build": 5,
+  "cause": "Started by an SCM change",
+  "keptForever": true,
+  "release": {
+    "lastGood": {
+      "images": {
+        "orders": "localhost:5001/retail/orders@sha256:3b20a8cfd6ac4c99c852ef98e51525854423cdf51cfa41d60ed1b840bc3029b0",
+        "checkout": "localhost:5001/retail/checkout@sha256:6718398f6f59ca006496fdee65ae5ea5e94d5a5f9278fe8d7ddef151171ee782",
+        "carts": "localhost:5001/retail/carts@sha256:56c14a0e5c55ce7c4d582c1c7908363516175e4efc41c7834d612ba8d5f9daf8",
+        "catalog": "localhost:5001/retail/catalog@sha256:6b634ffa77a3219c0da73106895d95a463642b093a53d9de13d1c92e7c51b2db",
+        "ui": "localhost:5001/retail/ui@sha256:679eebffb5f962187a95ff32ee56e7ff2a13cee89f50151b4e3e1cb42c59c23d"
+      },
+      "sourceSha": "2c9886e3b48a41c7c8f5d07d6c34aa6c54427e9d",
+      "configFingerprint": "581eafe0a96acd7b54d451bdd80da2932bbc9124cf1e7c55b68fd161d17f390b",
+      "verifiedAt": "2026-11-02T18:42:59.119734+00:00",
+      "recoveryFailed": false
+    }
+  },
+  "imageEvidence": {
+    "orders": {
+      "spec": "localhost:5001/retail/orders@sha256:3b20a8cfd6ac4c99c852ef98e51525854423cdf51cfa41d60ed1b840bc3029b0",
+      "imageIDs": [
+        "localhost:5001/retail/orders@sha256:3b20a8cfd6ac4c99c852ef98e51525854423cdf51cfa41d60ed1b840bc3029b0"
+      ]
+    },
+    "checkout": {
+      "spec": "localhost:5001/retail/checkout@sha256:6718398f6f59ca006496fdee65ae5ea5e94d5a5f9278fe8d7ddef151171ee782",
+      "imageIDs": [
+        "localhost:5001/retail/checkout@sha256:6718398f6f59ca006496fdee65ae5ea5e94d5a5f9278fe8d7ddef151171ee782"
+      ]
+    },
+    "carts": {
+      "spec": "localhost:5001/retail/carts@sha256:56c14a0e5c55ce7c4d582c1c7908363516175e4efc41c7834d612ba8d5f9daf8",
+      "imageIDs": [
+        "localhost:5001/retail/carts@sha256:56c14a0e5c55ce7c4d582c1c7908363516175e4efc41c7834d612ba8d5f9daf8"
+      ]
+    },
+    "catalog": {
+      "spec": "localhost:5001/retail/catalog@sha256:6b634ffa77a3219c0da73106895d95a463642b093a53d9de13d1c92e7c51b2db",
+      "imageIDs": [
+        "localhost:5001/retail/catalog@sha256:6b634ffa77a3219c0da73106895d95a463642b093a53d9de13d1c92e7c51b2db"
+      ]
+    },
+    "ui": {
+      "spec": "localhost:5001/retail/ui@sha256:679eebffb5f962187a95ff32ee56e7ff2a13cee89f50151b4e3e1cb42c59c23d",
+      "imageIDs": [
+        "localhost:5001/retail/ui@sha256:679eebffb5f962187a95ff32ee56e7ff2a13cee89f50151b4e3e1cb42c59c23d"
+      ]
+    }
+  },
+  "smoke": {
+    "orderId": "eb65df38-c4c0-411f-a184-f514b95eef9e",
+    "marker": "smoke-7f1b57d1c2df",
+    "productId": "a1258cd2-176c-4507-ade6-746dab5ad625",
+    "topology": {
+      "catalog": {
+        "databaseEndpoint": "catalog-mysql:3306",
+        "persistenceProvider": "mysql"
+      },
+      "carts": {
+        "persistenceProvider": "dynamodb",
+        "dynamodbTable": "Items",
+        "dynamodbEndpoint": "http://carts-dynamodb:8000"
+      },
+      "checkout": {
+        "persistenceProvider": "redis",
+        "databaseEndpoint": "redis://checkout-redis:6379"
+      },
+      "orders": {
+        "messagingProvider": "rabbitmq",
+        "persistenceProvider": "postgres",
+        "databaseEndpoint": "orders-postgresql:5432",
+        "messagingEndpoint": "orders-rabbitmq:5672"
+      }
+    }
+  },
+  "tests": {
+    "javaPassed": 33,
+    "javaFailed": 0,
+    "javaSkipped": 0,
+    "checkoutPassed": 12,
+    "checkoutFailed": 0,
+    "catalogPassedIncludingSubtests": 15
+  },
+  "dockerOomEvents": 0
+}
