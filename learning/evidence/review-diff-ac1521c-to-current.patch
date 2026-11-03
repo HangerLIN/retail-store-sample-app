@@ -1,0 +1,264 @@
+diff --git a/Jenkinsfile b/Jenkinsfile
+index 3e05bf5..ad7e1fd 100644
+--- a/Jenkinsfile
++++ b/Jenkinsfile
+@@ -6,6 +6,7 @@ pipeline {
+   stages {
+     stage('Preflight and reconcile') {
+       steps {
++        script { currentBuild.description = params.ACTION == 'reconcile' ? 'reconcile: running' : 'deploy: checking' }
+         sh '''
+           rm -rf reports
+           mkdir -p reports
+@@ -13,7 +14,17 @@ pipeline {
+         '''
+         sh 'bash learning/scripts/ci.sh preflight'
+         script { sh "bash learning/scripts/ci.sh ${params.ACTION == 'reconcile' ? 'reconcile' : 'prepare'}" }
+-        script { env.PUBLISH = params.ACTION == 'deploy' ? sh(script: 'bash learning/scripts/ci.sh needed', returnStdout: true).trim() : 'no' }
++        script {
++          env.PUBLISH = params.ACTION != 'reconcile' ? sh(script: 'bash learning/scripts/ci.sh needed', returnStdout: true).trim() : 'no'
++          if (params.ACTION == 'reconcile') {
++            currentBuild.description = 'reconcile: completed'
++          } else if (env.PUBLISH != 'yes') {
++            currentBuild.description = 'skipped: docs-only or no changes since lastGood'
++            currentBuild.result = 'NOT_BUILT'
++          } else {
++            currentBuild.description = "deploying ${env.GIT_COMMIT.take(12)}"
++          }
++        }
+       }
+     }
+     stage('Test and build') {
+@@ -22,10 +33,14 @@ pipeline {
+     }
+     stage('Deploy, verify and record') {
+       when { expression { env.PUBLISH == 'yes' } }
+-      steps { sh 'bash learning/scripts/ci.sh publish' }
++      steps {
++        sh 'bash learning/scripts/ci.sh publish'
++        script { currentBuild.description = "deployed ${env.GIT_COMMIT.take(12)}" }
++      }
+     }
+   }
+   post {
++    failure { script { currentBuild.description = "failed: ${currentBuild.description ?: 'initialization'}" } }
+     always {
+       archiveArtifacts artifacts: 'reports/*.json,reports/*.jsonl,reports/*.log', allowEmptyArchive: true
+       junit testResults: 'src/*/target/surefire-reports/TEST-*.xml', allowEmptyResults: true
+diff --git a/learning/scripts/ci.sh b/learning/scripts/ci.sh
+index 7741cfc..8871259 100755
+--- a/learning/scripts/ci.sh
++++ b/learning/scripts/ci.sh
+@@ -6,19 +6,35 @@ source learning/scripts/environment.sh
+ mkdir -p reports
+ case "$1" in
+   preflight)
+-    java -version; node --version; go version; kubectl version --client
+-    node .yarn/releases/yarn-4.11.0.cjs --version
+-    docker info --format '{{.ServerVersion}} {{.MemTotal}}'
++    {
++      java -version; node --version; (cd src/catalog; go version); kubectl version --client
++      node .yarn/releases/yarn-4.11.0.cjs --version
++      docker info --format '{{.ServerVersion}} {{.MemTotal}}'
++    } 2>&1 | tee reports/tool-versions.log
++    "$LAB_HOME/python/bin/python" -m unittest discover -s learning/tests -v 2>&1 | tee reports/release-tests.log
+     "$LAB_HOME/python/bin/python" learning/scripts/release.py preflight;;
+   build)
+     tag="$(git rev-parse HEAD)-${BUILD_NUMBER:-manual}"
+     docker events --filter event=oom --format '{{json .}}' > reports/docker-oom.jsonl &
+     events_pid=$!
+-    (while true; do date -u; docker stats --no-stream --format '{{.Name}} {{.MemUsage}}'; sleep 5; done) > reports/memory.log &
++    (while true; do
++      date -u
++      docker stats --no-stream --format '{{.Name}} {{.MemUsage}}'
++      memory_pressure -Q
++      sysctl vm.swapusage
++      sleep 5
++    done) > reports/memory.log &
+     stats_pid=$!
+-    trap 'kill "$events_pid" "$stats_pid" 2>/dev/null || true' EXIT
++    snapshot_pods() {
++      kubectl -n retail get pods -o json | "$LAB_HOME/python/bin/python" -c 'import json,sys; print(json.dumps([{ "name":p["metadata"]["name"], "phase":p["status"].get("phase"), "containers":p["status"].get("containerStatuses",[])} for p in json.load(sys.stdin)["items"]],indent=2))'
++    }
++    trap 'kill "$events_pid" "$stats_pid" 2>/dev/null || true; snapshot_pods > reports/pods-after.json || true' EXIT
++    snapshot_pods > reports/pods-before.json
+     for service in orders checkout carts catalog ui; do
+       bash learning/scripts/test-build.sh "$service"
++    done
++    # No candidate image is pushed until all five test suites have passed.
++    for service in orders checkout carts catalog ui; do
+       bash learning/scripts/image.sh "$service" "$tag"
+       rm -rf "reports/image-$service"
+     done
+diff --git a/learning/scripts/image.sh b/learning/scripts/image.sh
+index 6cbf9bf..80067e2 100755
+--- a/learning/scripts/image.sh
++++ b/learning/scripts/image.sh
+@@ -19,6 +19,11 @@ case "$service" in
+     cp src/checkout/package.json src/checkout/yarn.lock "$context/"
+     printf 'nodeLinker: node-modules\n' > "$context/.yarnrc.yml"
+     (cd "$context"; node ../../.yarn/releases/yarn-4.11.0.cjs install --immutable; node ../../.yarn/releases/yarn-4.11.0.cjs workspaces focus --all --production)
++    "$LAB_HOME/python/bin/python" - "$context/node_modules" <<'PY'
++import pathlib, sys
++native = list(pathlib.Path(sys.argv[1]).rglob('*.node'))
++assert not native, 'Native Node addons found: install production dependencies in Linux before packaging: ' + str(native[:5])
++PY
+     recipe=checkout;;
+   *) exit 2;;
+ esac
+diff --git a/learning/scripts/node-config.sh b/learning/scripts/node-config.sh
+index 72aa4f0..c39e930 100755
+--- a/learning/scripts/node-config.sh
++++ b/learning/scripts/node-config.sh
+@@ -3,6 +3,7 @@ set -euo pipefail
+ cd "$(dirname "$0")/../.."
+ # Re-run after recreating kind; only configures this lab's node and registry.
+ node=retail-lab-control-plane
++docker update --restart unless-stopped "$node"
+ docker network inspect kind --format '{{json .Containers}}' | grep -q retail-registry || docker network connect kind retail-registry
+ docker exec "$node" mkdir -p /etc/containerd/certs.d/localhost:5001
+ docker exec -i "$node" sh -c 'cat > /etc/containerd/certs.d/localhost:5001/hosts.toml' <<'CONFIG'
+diff --git a/learning/scripts/release.py b/learning/scripts/release.py
+index 75004ea..a66255a 100644
+--- a/learning/scripts/release.py
++++ b/learning/scripts/release.py
+@@ -1,6 +1,6 @@
+ """Serialized five-service releases, persisted intent and last verified rollback point."""
+ 
+-import subprocess, json, hashlib, pathlib, urllib.request, urllib.error, sys, datetime, copy
++import subprocess, json, hashlib, pathlib, urllib.request, urllib.error, sys, datetime, copy, http.client
+ from render import render
+ from smoke import verify
+ 
+@@ -12,7 +12,7 @@ class UnhealthyRelease(RuntimeError):
+ def business_verify():
+     try:
+         return verify()
+-    except (urllib.error.URLError, AssertionError) as e:
++    except (urllib.error.URLError, http.client.HTTPException, OSError, TimeoutError, AssertionError) as e:
+         raise UnhealthyRelease(str(e)) from e
+ 
+ 
+@@ -83,12 +83,12 @@ def settings(c):
+     return {k: c.get(k, []) for k in ["env", "envFrom", "command", "args"]}
+ 
+ 
+-def preflight():
++def preflight(adopt=False):
+     assert (
+         subprocess.check_output(
+             ["kubectl", "config", "current-context"], text=True
+         ).strip()
+-        == "retail-release"
++        == ("kind-retail-lab" if adopt else "retail-release")
+     ), "Wrong release context"
+     expected = render()
+     fingerprint = {}
+@@ -114,13 +114,44 @@ def preflight():
+     ).hexdigest()
+     _, state = readstate()
+     if state.get("lastGood"):
+-        assert state["lastGood"]["configFingerprint"] == digest, (
++        assert adopt or state["lastGood"]["configFingerprint"] == digest, (
+             "Admin config changed: establish a new verified baseline before CI"
+         )
+         checkimages(state["lastGood"]["images"])
+     return digest
+ 
+ 
++def adopt_config():
++    """Admin-only workflow: accept verified config without changing release provenance."""
++    fingerprint = preflight(adopt=True)
++    base, state = readstate()
++    good = state.get("lastGood")
++    assert good and not state.get("pending") and not state.get("recoveryFailed"), (
++        "Resolve pending/recovery state before adopting config"
++    )
++    assert imageslive() == good["images"], "Image drift: restore lastGood before adoption"
++    for service in SERVICES:
++        subprocess.run(
++            ["kubectl", "-n", "retail", "rollout", "status",
++             "deployment/" + service, "--timeout=240s"], check=True,
++        )
++    business_verify()
++    evidence(good["images"])
++    assert imageslive() == good["images"], "Images changed during adoption"
++    assert preflight(adopt=True) == fingerprint, "Config changed during adoption"
++    good["configFingerprint"] = fingerprint
++    # Preserve sourceSha, images and release verification time. This is a config event.
++    write(state, base)
++    pathlib.Path("reports").mkdir(exist_ok=True)
++    pathlib.Path("reports/config-adoption.json").write_text(json.dumps({
++        "configFingerprint": fingerprint,
++        "sourceSha": good["sourceSha"],
++        "images": good["images"],
++        "adoptedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
++    }, indent=2))
++    print("Adopted verified configuration; image and source baseline unchanged")
++
++
+ def imageslive():
+     return {
+         s: obj("deployment", s)["spec"]["template"]["spec"]["containers"][0]["image"]
+@@ -242,7 +273,11 @@ def needed():
+     except subprocess.CalledProcessError:
+         return True
+     return any(
+-        not (f.endswith((".md", ".mmd")) or f.startswith("screenshots/")) for f in files
++        not (
++            f.endswith((".md", ".mmd"))
++            or f.startswith(("screenshots/", "learning/evidence/"))
++        )
++        for f in files
+     )
+ 
+ 
+@@ -306,5 +341,7 @@ if __name__ == "__main__":
+         publish()
+     elif action == "bootstrap":
+         publish(True)
++    elif action == "adopt-config":
++        adopt_config()
+     else:
+         raise SystemExit("Unknown release action")
+diff --git a/learning/scripts/smoke.py b/learning/scripts/smoke.py
+index 71ecd0c..065cf39 100644
+--- a/learning/scripts/smoke.py
++++ b/learning/scripts/smoke.py
+@@ -42,9 +42,23 @@ def forward(service):
+             proc.wait()
+ 
+ 
++MAX_JSON_BYTES = 5 * 1024 * 1024
++
++
+ def getjson(url):
+     with urllib.request.urlopen(url, timeout=25) as r:
+-        return json.load(r)
++        payload = r.read(MAX_JSON_BYTES + 1)
++        assert len(payload) <= MAX_JSON_BYTES, "JSON response exceeds 5 MiB limit"
++        return json.loads(payload)
++
++
++def verify_order(orders, orderid, marker):
++    assert isinstance(orders, list), "Orders response must be an array"
++    matches = [o for o in orders if isinstance(o, dict) and o.get("id") == orderid]
++    assert len(matches) == 1, "Expected exactly one order with the new order ID"
++    address = matches[0].get("shippingAddress") or {}
++    assert address.get("firstName") == marker, "New order marker mismatch"
++    assert address.get("email") == marker + "@example.invalid", "New order email mismatch"
+ 
+ 
+ def verify():
+@@ -124,10 +138,7 @@ def verify():
+     orderid = match.group(1)
+     with forward("orders") as base:
+         orders = getjson(base + "/orders")
+-    evidence = json.dumps(orders)
+-    assert orderid in evidence and marker in evidence, (
+-        "New order missing from Orders/PostgreSQL"
+-    )
++    verify_order(orders, orderid, marker)
+     result = {
+         "orderId": orderid,
+         "marker": marker,
