@@ -6,17 +6,17 @@
 
 | 评审项 | 处理 | 验证边界 |
 | --- | --- | --- |
-| 1. 验收表缺失败主路径 | ARCHITECTURE、CHECKLIST、IMPLEMENTATION 补齐未验证行与 #1–#9 含义；#5 的 SCM 触发已从 Jenkins API 确认 | Deploy/Verify 自动回滚、recoveryFailed 修复等目前新增脚本测试，仍未做真实集群故障注入；不再借中断演练概括所有失败恢复 |
+| 1. 验收表缺失败主路径 | ARCHITECTURE、CHECKLIST、IMPLEMENTATION 补齐构建含义；#12 真实 Verify 失败回滚，#14 真实 recoveryFailed→修复候选发布 | 仍未覆盖 rollout 超时、镜像拉取、数据库迁移等失败模式；不借中断演练概括所有恢复 |
 | 2. 证据轮转 | #3–#6 已 Keep forever；导出 #5 经过检查的 JSON 到 Git，IMPLEMENTATION 摘录完整五个 digest 和 60 项计数 | 保护普通构建轮转，不保护整个 Jenkins 卷丢失 |
 | 3. 配置接纳 | 新增管理员 adopt-config；无 pending/recoveryFailed、镜像不漂移、rollout、完整 Verify、配置二次检查、resourceVersion 更新；只改指纹 | 临时无害配置已在真实集群完成拒绝→apply/rollout→adopt→恢复原配置→adopt，最终原状态内容不变 |
 | 4. 作业标记 | description 区分部署、跳过、恢复、失败；跳过 NOT_BUILT；ACTION 判断统一，空值按 deploy | Jenkinsfile 已通过控制器校验；历史 #6–#9 不倒改成新规则 |
-| 5. 状态测试 | recoveryFailed 原本就强制 needed=true；新增 21 项回归测试，包含多个表驱动场景和实际 shell 编排 | 外部 kubectl/Docker 使用替身；与真实集群验证分别记账 |
+| 5. 状态测试 | recoveryFailed 原本就强制 needed=true；新增 22 项回归测试，包含多个表驱动场景、HTTP 连接中断和实际 shell 编排 | 外部 kubectl/Docker 使用替身；与真实集群验证分别记账 |
 | 6. 冒烟过宽 | 精确匹配唯一订单对象中的 id、shippingAddress.firstName/email；JSON 25 秒超时、5 MiB 上限 | 已真实下单读回；跨订单标记、缺失/重复订单、响应超限有负例测试 |
 | 7. macOS 生产依赖 | 现有生产镜像无 `.node`；生产打包目录新增检查，有原生 addon 即停止 | 开发依赖有 `.node` 不等于生产包含；其他平台特定行为仍需 Linux CI 验证，AWS 不直接复用本机构建路径 |
 | 8. RBAC | 权限表明确 Deployment patch 可间接挂载 Secret；说明未授予 pods/log/events，由管理员诊断 | 本期不加入可选 AdmissionPolicy，不宣称强隔离 |
 | 9. Mac 内存 | 构建采样增加 memory_pressure 与 swap；保留 Docker 用量、OOM 事件、Pod 前后重启和最近终止状态 | 不把新采样追认到历史 #5，不宣称单次样本代表容量上限 |
 
-补充：所有应用测试现改为全部通过后再推送镜像。此前“测一个、推一个”的顺序不能保证后续服务测试失败时 Registry 不变。新隔离测试逐个让五个服务失败，确认没有任何推送调用；真实 Jenkins 故障提交仍标未验证。
+补充：所有应用测试现改为全部通过后再推送镜像。此前“测一个、推一个”的顺序不能保证后续服务测试失败时 Registry 不变。新隔离测试逐个让五个服务失败，确认没有任何推送调用；真实 Jenkins 中“测试失败不发布”仍标未验证。
 
 Go 版本写入工具报告（本机 Catalog 为 go1.25.0 darwin/arm64）；node-config.sh 每次配置节点都会设置 unless-stopped。旧 Docker/JDK 不在此次升级，运行手册要求升级前后预检。MySQL 的重启历史和 OOMKilled 可见状态已补充，购物车第 33 条来源仍保留不确定性。
 
@@ -51,3 +51,7 @@ env/python/bin/python -m unittest discover -s learning/tests -v
 Jenkins #10 由 SCM 自动触发，源码 89540a95a737a9ac9da27398ee24388514c132c7，SUCCESS；构建描述为 deployed 89540a95a737。60 项应用测试、21 项脚本测试、生产依赖检查、完整下单及五个运行镜像核对均通过。#10 已永久保留，摘要与完整镜像引用补入 IMPLEMENTATION。
 
 这验证的是正常发布路径及本次修改，未将其扩写为真实故障注入成功。
+
+## 真实失败恢复补充
+
+本轮随后完成 #12–#14 演练，完整证据和构建语义在 [IMPLEMENTATION.md](IMPLEMENTATION.md) 及 [failure-recovery-12-14.json](evidence/failure-recovery-12-14.json)。#12 验证 Verify 失败后自动回滚；#13 暴露并保留一个连接中断分类缺陷；#14 修复后验证 recoveryFailed 标记、强制完整构建和修复候选发布。三次均由 SCM 轮询触发、永久保留。

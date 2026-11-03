@@ -273,7 +273,11 @@ def needed():
     except subprocess.CalledProcessError:
         return True
     return any(
-        not (f.endswith((".md", ".mmd")) or f.startswith("screenshots/")) for f in files
+        not (
+            f.endswith((".md", ".mmd"))
+            or f.startswith(("screenshots/", "learning/evidence/"))
+        )
+        for f in files
     )
 
 

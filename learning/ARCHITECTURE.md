@@ -1,12 +1,12 @@
 # 本地网店、Kubernetes 与 Jenkins：现状架构
 
-运行快照更新：2026-11-03 11:43，Asia/Shanghai；保留标明时间的历史验收数据。本文描述已经落地的系统；历史设计见 [DESIGN.md](DESIGN.md)，操作步骤见 [RUNBOOK.md](RUNBOOK.md)，验收证据见 [IMPLEMENTATION.md](IMPLEMENTATION.md)。
+运行快照更新：2026-11-03 13:15，Asia/Shanghai；保留标明时间的历史验收数据。本文描述已经落地的系统；历史设计见 [DESIGN.md](DESIGN.md)，操作步骤见 [RUNBOOK.md](RUNBOOK.md)，验收证据见 [IMPLEMENTATION.md](IMPLEMENTATION.md)。
 
 ## 1. 当前结论
 
 完整网店与 Jenkins 发布链路已经在这台 Mac 上运行。五个应用、五个依赖运行于本地单节点 kind；Jenkins 控制器和镜像仓库运行于 Docker Desktop；构建 Agent 是 Mac 原生进程。本期没有创建或使用 AWS 云资源。
 
-源码提交已经走通过真实测试、镜像构建、推送、顺序发布、完整下单、订单读回和发布记录。发布中断恢复、数据库 Pod 重建、实验容器 stop/start、Docker Desktop 重启均有实际验证。**Mac 整机重启尚未验收；Deploy/Verify 失败自动回滚、recoveryFailed 后修复发布尚未做真实集群故障注入。** 本轮新增脚本回归测试覆盖这些分支，不能替代集群演练。
+源码提交已经走通过真实测试、镜像构建、推送、顺序发布、完整下单、订单读回和发布记录。发布中断恢复、Verify 失败自动回滚、恢复失败后的修复候选、数据库 Pod 重建、实验容器 stop/start、Docker Desktop 重启均有实际验证。**Mac 整机重启尚未验收。** 真实故障演练仍只覆盖本文第 10 节的场景，不等于穷尽镜像拉取、数据库迁移、节点故障等失败模式。
 
 这是一套个人学习环境：单机器、单节点、单副本，发布和重启允许短暂不可用。当前没有高可用、备份恢复自动化、真实支付或生产安全隔离。
 
@@ -17,18 +17,18 @@
 | Fork | [HangerLIN/retail-store-sample-app](https://github.com/HangerLIN/retail-store-sample-app)，分支 `main` |
 | 上游 | [aws-containers/retail-store-sample-app](https://github.com/aws-containers/retail-store-sample-app) |
 | 本地目录 | `/Users/lth/Documents/ChatGPT/k/retail-store-sample-app` |
-| 本文编写前仓库 HEAD | `89540a95a737a9ac9da27398ee24388514c132c7`，评审修复与验证 |
-| 当前已验证应用源码 | `89540a95a737a9ac9da27398ee24388514c132c7`，由 Jenkins #10 发布 |
-| 最近 Jenkins 作业 | [#10 SUCCESS](http://127.0.0.1:8080/job/retail-local/10/)，描述 `deployed 89540a95a737`；核验时没有运行中的构建 |
+| 本文编写前仓库 HEAD | `5e79c55547d13186de177affaab03b310681b464`，连接中断分类修复 |
+| 当前已验证应用源码 | `5e79c55547d13186de177affaab03b310681b464`，由 Jenkins #14 发布 |
+| 最近 Jenkins 作业 | [#14 SUCCESS](http://127.0.0.1:8080/job/retail-local/14/)，描述 `deployed 5e79c55547d1`；核验时没有运行中的构建 |
 | 集群 | `retail-lab`，节点 `retail-lab-control-plane` 为 Ready |
 | 业务工作负载 | `retail` 命名空间内 10/10 Pod Running、Ready |
 | 持久卷声明 | MySQL、PostgreSQL、DynamoDB 三个 PVC 均 Bound，各 1 GiB |
-| 发布状态 | `lastGood` 存在，`pending` 不存在，已记录版本的 `recoveryFailed=false` |
-| 线上 digest 与 lastGood | 原始快照、配置接纳恢复后与 #10 发布验证均 5/5 一致 |
+| 发布状态 | `lastGood` 存在，`pending` 不存在，已记录版本的 `recoveryFailed=true`，表示该成功候选之前发生过真实业务恢复失败 |
+| 线上 digest 与 lastGood | 原始快照、配置接纳恢复后、#10 与 #14 发布验证均 5/5 一致 |
 | 网店入口 | [http://127.0.0.1:8888](http://127.0.0.1:8888)，本次只读访问返回 HTTP 200 |
 | Jenkins 入口 | [retail-local](http://127.0.0.1:8080/job/retail-local/) |
 
-仓库 HEAD 与运行应用源码不必相同：#5 到 #9 是文档提交，检查后跳过重新构建和发布；本轮 #10 因流水线和脚本变化，重新完成五服务发布。本文后续文档提交也不会替换 lastGood 的源码版本。判断正在运行什么，应看 `release-state.lastGood` 和 Deployment 的镜像摘要，不能只看 GitHub 最新提交。HTTP 200 是本次在线快照，完整业务成功的证据来自已完成的发布与重启验收，二者不混用。
+仓库 HEAD 与运行应用源码不必相同：#5 到 #9 是文档提交，检查后跳过重新构建和发布；#10 与 #14 因流水线和脚本变化，重新完成五服务发布。本文后续文档提交也不会替换 lastGood 的源码版本。判断正在运行什么，应看 `release-state.lastGood` 和 Deployment 的镜像摘要，不能只看 GitHub 最新提交。HTTP 200 是本次在线快照，完整业务成功的证据来自已完成的发布与重启验收，二者不混用。
 
 ## 2. 部署架构与边界
 
@@ -242,20 +242,20 @@ Testcontainers 通过 Docker socket 启动隔离测试依赖；Carts、Orders、
 | Checkout | `test:integration`，Jest 串行执行 | 12 |
 | 合计 | 五个服务均断言实际执行数量大于零 | 60 |
 
-Checkout 上游 `test` 的 `exit 0` 不作为测试；当前无 `src` 下单元 spec，执行的是 `test/` 下集成测试。Catalog 也不依赖上游空操作测试入口。每次作业先删除旧报告，Java 使用 clean，避免拿旧报告判成功。另有 21 项发布、配置接纳、冒烟和实际 CI shell 编排回归测试，在 preflight 中执行并归档 `release-tests.log`，包括 pending/漂移组合、recoveryFailed 强制构建、回滚失败保留 pending、Record 前后中断、CAS 冲突和跨订单误匹配。表格中的 60 项仍是 #5 的应用测试数量。
+Checkout 上游 `test` 的 `exit 0` 不作为测试；当前无 `src` 下单元 spec，执行的是 `test/` 下集成测试。Catalog 也不依赖上游空操作测试入口。每次作业先删除旧报告，Java 使用 clean，避免拿旧报告判成功。另有 22 项发布、配置接纳、冒烟和实际 CI shell 编排回归测试，在 preflight 中执行并归档 `release-tests.log`，包括 pending/漂移组合、recoveryFailed 强制构建、回滚失败保留 pending、Record 前后中断、CAS 冲突、跨订单误匹配和 HTTP 连接中断。表格中的 60 项仍是 #5 的应用测试数量。
 
 Jenkins 的 JUnit 页面收集 Java 33 项；Go JSONL、Jest JSON 与发布证据作为归档，不能把 JUnit 页面计数误认为全部测试数。只改文档或只恢复的作业不会生成一套新的测试结果，也不会冒用上一次报告。
 
 ## 7. 提交、发布与恢复
 
-流水线入口为 [Jenkinsfile](../Jenkinsfile)，核心逻辑为 [release.py](scripts/release.py)。仅信任 Fork 的 main，每约两分钟 SCM 轮询；禁止并发，单次超时 90 分钟，普通构建保留最近 10 次；历史验收 #3–#6 和本轮 #10 已设为 Keep forever，不受普通轮转删除。#5 关键证据另存入 Git 的 [evidence/build-5.json](evidence/build-5.json)，完整五个 digest 和计数也摘入 IMPLEMENTATION。永久保留仍不是 Jenkins 卷的异地备份。
+流水线入口为 [Jenkinsfile](../Jenkinsfile)，核心逻辑为 [release.py](scripts/release.py)。仅信任 Fork 的 main，每约两分钟 SCM 轮询；禁止并发，单次超时 90 分钟，普通构建保留最近 10 次；历史验收 #3–#6、#10 和 #12–#14 已设为 Keep forever，不受普通轮转删除。#5 关键证据另存入 Git 的 [evidence/build-5.json](evidence/build-5.json)，失败恢复证据见 [evidence/failure-recovery-12-14.json](evidence/failure-recovery-12-14.json)。永久保留仍不是 Jenkins 卷的异地备份。
 
 | 阶段 | 做什么 | 通过标准 |
 | --- | --- | --- |
 | Checkout | 拉取确定提交，清理本次报告 | 源码版本可追溯 |
 | Preflight | 工具和 Docker 检查、专用 context、配置比对、验证 lastGood 五个镜像可从 Registry 获取 | 不因“网页暂时不健康”直接阻止修复；权限、配置、镜像基础错误必须停止 |
 | Prepare / Reconcile | 检测 pending 或线上镜像偏离 lastGood，尝试恢复 | 正常恢复后清除 pending；特定业务恢复失败可标记后继续修复发布 |
-| Needed | 对比 `lastGood.sourceSha → HEAD` | 仅 `.md`、`.mmd`、`screenshots/**` 变化可跳过；脚本、Jenkinsfile、清单变化不跳过 |
+| Needed | 对比 `lastGood.sourceSha → HEAD` | 仅 `.md`、`.mmd`、`screenshots/**`、`learning/evidence/**` 变化可跳过；脚本、Jenkinsfile、清单变化不跳过 |
 | Test and build | Orders → Checkout → Carts → Catalog → UI，先完成五个服务的测试和编译，再逐个打包推送 | 五个服务真实测试均非零且成功，构建期间无 Docker OOM 事件 |
 | Deploy | 先保存 pending，再按上述顺序逐个更新镜像，每个等待 rollout，最长 240 秒 | 上一个就绪后才处理下一个，UI 最后 |
 | Verify | topology、完整网店下单、Orders 读回、运行镜像证据 | HTTP 200 或 Pod Ready 均不能单独判成功 |
@@ -271,7 +271,7 @@ Jenkins 的 JUnit 页面收集 Java 33 项；Go JSONL、Jest JSON 与发布证�
 
 Verify 对照部署引用、Registry manifest 和就绪 Pod 的 `status.imageID`。若 Registry 返回 OCI index，允许对应 ARM64 子 manifest 摘要，避免把合法的父子摘要差异误报为部署错误。
 
-当前五个应用的完整引用保存在 `retail/release-state` 和 [#10 归档](http://127.0.0.1:8080/job/retail-local/10/artifact/)；#5 作为历史基线另有固定 Git 证据；五个依赖的固定本地摘要在 Kustomize 清单。Java、Node、Alpine 打包基础镜像也已固定并缓存。不能据此推断 Jenkins、kind、所有测试依赖都遵循同一套镜像发布规则。
+当前五个应用的完整引用保存在 `retail/release-state` 和 [#14 归档](http://127.0.0.1:8080/job/retail-local/14/artifact/)；#5 作为历史基线另有固定 Git 证据；五个依赖的固定本地摘要在 Kustomize 清单。Java、Node、Alpine 打包基础镜像也已固定并缓存。不能据此推断 Jenkins、kind、所有测试依赖都遵循同一套镜像发布规则。
 
 ### 7.2 发布状态与恢复边界
 
@@ -287,7 +287,7 @@ Verify 对照部署引用、Registry manifest 和就绪 Pod 的 `status.imageID`
 | `pending` | 在改动线上镜像前保存的候选，发布中断时留下 |
 | 顶层 `recoveryFailed` | 准备阶段业务恢复失败，提示必须构建修复候选 |
 
-状态更新携带此前读到的 `resourceVersion`，避免静默覆盖并发手工改动。当前没有 pending，最近 verifiedAt 为 `2026-11-03T03:41:22.335635+00:00`（UTC），对应本轮 #10。
+状态更新携带此前读到的 `resourceVersion`，避免静默覆盖并发手工改动。当前没有 pending，最近 verifiedAt 为 `2026-11-03T05:15:36.171381+00:00`（UTC），对应本轮 #14；lastGood 的 recoveryFailed 为 true，顶层 recoveryFailed 已被清除。
 
 ```mermaid
 flowchart LR
@@ -357,6 +357,8 @@ Java 应用使用 `MaxRAMPercentage=60`；Jenkins 容器上限 1 GiB、Java 堆 
 | --- | --- |
 | 五服务真实测试和完整自动发布 | #5 原因经 Jenkins API 核实为 Started by an SCM change；SUCCESS，60 项测试，五个 digest、订单读回和 lastGood 均归档 |
 | 本轮修改的自动发布 | #10 SCM 触发，60 项应用测试与 21 项脚本测试通过；描述 deployed 89540a95a737，真实下单、镜像核对和 lastGood 记录成功，已永久保留 |
+| Verify 失败自动回滚 | #12 SCM 触发。候选 UI 保持 readiness 但将成功页 `Order ID` 改为 `Order reference`，完整结账的 smoke 因无法提取订单 ID 失败；构建为 FAILURE，五个 Deployment 回到 #10 lastGood，pending 清除，verifiedAt 不变；回滚后真实下单成功，候选 UI digest 仍能由 Registry HEAD 读取 |
+| recoveryFailed 后修复候选 | #13 首次将 UI 扩为 0 副本时暴露 `RemoteDisconnected` 未被归类为可恢复业务失败，FAILURE 且未写 flag；修复后 #14 在同一类恢复失败中写入顶层 flag，强制完整构建。测试期间恢复 UI 副本，候选成功发布，lastGood.recoveryFailed=true、顶层 flag 清除，真实下单和五镜像核对成功 |
 | 发布中断 | #3 在仅 Orders 更新后终止 Agent/发布进程，保留混合版本和 pending；#4 reconcile 成功恢复 |
 | 文档提交跳过 | #6 验证跳过测试和发布，不复用旧报告；lastGood 保持 #5 源码 |
 | 配置漂移与发布权限 | provider 覆盖被拒绝；真实 port-forward/rollout 成功，exec/Secret/PVC 删除被拒绝 |
@@ -366,8 +368,8 @@ Java 应用使用 `MaxRAMPercentage=60`；Jenkins 容器上限 1 GiB、Java 堆 
 | 实验容器 stop/start | 容器 ID 不变，旧订单和购物车保留，新下单成功 |
 | Docker Desktop 重启 | 已获确认并执行；VM boot ID 改变、Mac 启动时间未变；四个容器自动恢复、Agent 重连、10 Pod 就绪、33 条购物车逐项一致、旧订单保留并能新下单 |
 | 测试失败不发布 | 实际 CI shell 使用隔离的假外部命令测试：五个服务任一测试失败，均不调用镜像推送；尚未通过 Jenkins 真实故障提交验证 Registry 与集群不变 |
-| Deploy/Verify 失败自动回滚 | 脚本回归测试通过；真实集群故障注入未做，不能拿 #3/#4 代替 |
-| recoveryFailed 后修复候选发布 | 状态回归测试通过；真实集群故障注入未做 |
+| Deploy/Verify 失败自动回滚 | #12 已做真实 Verify 故障注入；仍未分别演练 rollout 超时、镜像拉取失败或数据库迁移失败 |
+| recoveryFailed 后修复候选发布 | #14 已做真实恢复失败→完整构建→修复候选发布演练；副本数恢复是操作修复，不把它描述为单靠源码修复基础设施 |
 | SCM 后页面可见改动 | SCM 触发已确认；刻意修改可见页面并比较前后效果未单独验收 |
 | Redis 单独重启后重新结账 | 整体重启覆盖过重新结账，单独 Redis 故障演练未做 |
 | Jenkins 控制器删除并重建后复用卷 | 未做；现有 stop/start 和 Docker Desktop 重启不等价 |

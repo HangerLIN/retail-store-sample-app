@@ -1,0 +1,52 @@
+{
+  "purpose": "Evidence for real Verify rollback and recoveryFailed repair-candidate exercises.",
+  "builds": {
+    "12": {
+      "sourceSha": "1bfc8970225bf89594e55b5a77f7087aea8a23f5",
+      "trigger": "Started by an SCM change",
+      "result": "FAILURE",
+      "description": "failed: deploying 1bfc8970225b",
+      "fault": "The UI success-page label was changed from Order ID to Order reference while readiness remained healthy.",
+      "verifyFailure": "Checkout did not return order ID",
+      "rollback": {
+        "fiveDeploymentDigestsReturnedToLastGood": true,
+        "pendingCleared": true,
+        "lastGoodSourceShaUnchanged": "89540a95a737a9ac9da27398ee24388514c132c7",
+        "lastGoodVerifiedAtUnchanged": "2026-11-03T03:41:22.335635+00:00",
+        "postRollbackStorefrontSmokePassed": true
+      },
+      "candidateUiDigestStillAvailable": "sha256:4a1f3a4932fa8d046af17ebbe10a815abdf39154fd4ba6a45e203565eca5de8c"
+    },
+    "13": {
+      "sourceSha": "06082475183e71655c16c369ca03dd6af26c1ff8",
+      "trigger": "Started by an SCM change",
+      "result": "FAILURE",
+      "fault": "A reconciled UI had zero replicas, causing http.client.RemoteDisconnected during the storefront request.",
+      "finding": "RemoteDisconnected was not classified as UnhealthyRelease, so recoveryFailed was not recorded."
+    },
+    "14": {
+      "sourceSha": "5e79c55547d13186de177affaab03b310681b464",
+      "trigger": "Started by an SCM change",
+      "result": "SUCCESS",
+      "description": "deployed 5e79c55547d1",
+      "fix": "HTTPException, OSError and TimeoutError are classified as recoverable business verification failures.",
+      "prepare": {
+        "topLevelRecoveryFailedRecorded": true,
+        "neededForcedFullBuild": true
+      },
+      "operationalRepair": "UI replicas were restored to one before candidate deployment.",
+      "lastGood": {
+        "sourceSha": "5e79c55547d13186de177affaab03b310681b464",
+        "verifiedAt": "2026-11-03T05:15:36.171381+00:00",
+        "recoveryFailed": true,
+        "topLevelRecoveryFailedCleared": true,
+        "pendingAbsent": true,
+        "fiveDeploymentDigestsMatch": true
+      },
+      "smokeOrderId": "c1a44542-b88b-4f40-8aba-b8f3823a0e14"
+    }
+  },
+  "retention": {
+    "buildsKeptForever": [12, 13, 14]
+  }
+}

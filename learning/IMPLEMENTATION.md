@@ -61,7 +61,7 @@ Jenkins 构建 #3 在五个服务测试和镜像推送完成后，Orders 已更�
 
 ## 架构评审补充（2026-11-03）
 
-本节区分真实集群验收和脚本回归测试。Deploy/Verify 异常自动回滚、recoveryFailed 后修复、Jenkins 中真实测试失败的故障注入尚未执行；不以 #3/#4 中断演练代替。Redis 单独重启、控制器删除重建复用卷、SCM 页面可见改动也未单独验收。
+本节区分真实集群验收和脚本回归测试。#12 已完成 Verify 异常自动回滚，#14 已完成 recoveryFailed 后修复候选发布；不以 #3/#4 中断演练代替它们。Jenkins 中真实测试失败、Redis 单独重启、控制器删除重建复用卷、SCM 页面可见改动仍未单独验收。
 
 ### 构建编号与证据保留
 
@@ -88,7 +88,7 @@ Jenkins 构建 #3 在五个服务测试和镜像推送完成后，Orders 已更�
 
 ### 本轮验证
 
-- 新增 21 项脚本测试，含 needed 的 recoveryFailed/docs 组合、pending/镜像漂移组合、失败回滚、回滚失败、Record 前后中断、CAS 冲突和配置接纳拒绝路径。测试使用假外部命令，不冒充真实故障注入。
+- 新增 22 项脚本测试，含 needed 的 recoveryFailed/docs 组合、pending/镜像漂移组合、失败回滚、回滚失败、Record 前后中断、CAS 冲突、配置接纳拒绝和 HTTP 连接中断。测试使用假外部命令，不冒充真实故障注入。
 - 实际运行 ci.sh 的隔离编排测试逐一让五个服务测试失败，确认均无 image.sh 调用；成功时五个 test 调用全在第一个 push 前。
 - 严格订单匹配已用受限发布身份真实下单通过：`d1d14cd2-0c42-4373-b455-fbdbecddd0ab`。
 - adopt-config 演练：临时向 UI ConfigMap 加入无业务影响键，未应用时因新 ConfigMap 不存在被拒绝；应用并 rollout 后因基线指纹不同被拒绝；管理员接纳时下单 `7e0f9fbb-4c9b-4d04-b41b-8876d5cdf13f` 成功。恢复原配置并再次接纳，下单 `b7caca6e-e94f-4eb5-92e1-59132ffc9453` 成功；images/sourceSha/verifiedAt 始终不变，最终 state 内容与演练前一致。日志在本机 env/reports/config-adoption/。
@@ -103,6 +103,15 @@ Jenkins 构建 #3 在五个服务测试和镜像推送完成后，Orders 已更�
 源码 `89540a95a737a9ac9da27398ee24388514c132c7`，SCM 自动触发，SUCCESS，description=`deployed 89540a95a737`。60 项应用测试和 21 项脚本测试通过，严格订单匹配、镜像核对、lastGood 记录成功，订单 `00a1d3a6-b93c-4fc7-972f-5b8d2d0e76ac`。#10 已 Keep forever。
 
 Docker 用量采样峰值 3.286 GiB，OOM 事件 0；构建阶段 pods-before/pods-after 对应原有 Pod 的重启计数一致。Mac memory_pressure free percentage 45–58%，swap used 在各次采样均为 1731.06 MiB；这是既有 swap，不能由此推断是本次构建产生。报告仍可能漏掉采样间隙的瞬时峰值。工具版本、内存与 Pod 快照均已归档。
+
+### 真实失败恢复演练 #12–#14
+
+- #12（SCM）提交 `1bfc897` 将 UI 成功页 `Order ID` 临时改为 `Order reference`。五个候选镜像完成推送和 rollout，Pod readiness 正常，但完整结账在成功页提取订单 ID 时失败。构建为 FAILURE，发布脚本自动恢复 #10 的五个 digest；随后实测五个 Deployment 与原 lastGood 全部一致、pending 不存在、lastGood.sourceSha/verifiedAt 不变、真实下单成功。候选 UI `sha256:4a1f3a4932fa8d046af17ebbe10a815abdf39154fd4ba6a45e203565eca5de8c` 仍由 Registry HEAD 返回，未被清理。
+- #13（SCM）在模拟镜像漂移且 UI 副本为 0 时，恢复 lastGood 后的首页请求抛出 `http.client.RemoteDisconnected`。旧代码只将 URLError 和 AssertionError 归为业务不健康，导致 FAILURE 而没有 top-level recoveryFailed。这是演练发现的实际缺陷，不计为恢复路径已验证。
+- 提交 `5e79c55` 将 HTTPException、OSError 和 TimeoutError 归入 UnhealthyRelease，并增加针对 RemoteDisconnected 的回归测试。
+- #14（SCM）重复同类恢复失败后，prepare 写入 top-level recoveryFailed=true，needed 强制进入完整构建。在候选发布前将 UI 副本恢复为 1；候选成功发布并完成真实下单 `c1a44542-b88b-4f40-8aba-b8f3823a0e14` 和五镜像核对。最终 lastGood 为 `5e79c55547d13186de177affaab03b310681b464`，lastGood.recoveryFailed=true 记录历史，顶层 recoveryFailed 和 pending 均不存在。#12、#13、#14 均已 Keep forever。
+
+完整的可审计字段见 [failure-recovery-12-14.json](evidence/failure-recovery-12-14.json)。这覆盖 Verify 失败和连接中断恢复两种路径；不代表 rollout 超时、镜像拉取失败、数据库迁移失败已被演练。
 
 当前五镜像（历史 #5 摘要保留在前表）：
 

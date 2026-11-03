@@ -56,7 +56,7 @@ class ReleaseTests(unittest.TestCase):
 
     def test_needed_matrix(self):
         for recovery in (False, True):
-            for files, changed in [("learning/README.md\nlearning/x.mmd\n", False),
+            for files, changed in [("learning/README.md\nlearning/x.mmd\nlearning/evidence/build.json\n", False),
                                    ("", False), ("src/orders/a.java\n", True),
                                    ("learning/scripts/ci.sh\n", True)]:
                 with self.subTest(recovery=recovery, files=files):
