@@ -97,3 +97,19 @@ Jenkins 构建 #3 在五个服务测试和镜像推送完成后，Orders 已更�
 - Catalog 实际工具链 `go1.25.0 darwin/arm64`。本轮增加工具链报告、Mac memory_pressure/swap、Pod 前后状态采样；历史 #5 不因此获得原本没有采集的 Mac 内存证据。
 - 配置演练后 MySQL Pod RESTARTS=2，最近终止原因 Unknown；十个 Pod 均 Ready，当前可见的最近终止记录无 OOMKilled。这些重启包含此前 Docker 重启，不应重写为“从未重启”或“历史从未 OOM”。
 - 购物车 32/33 的差异保留不确定性：32 个请求已收到成功，另一个返回临时错误的请求可能已经落库；没有足够证据认定为重试落地，也不能称其为预置数据。
+
+### 本轮 Jenkins #10 自动发布
+
+源码 `89540a95a737a9ac9da27398ee24388514c132c7`，SCM 自动触发，SUCCESS，description=`deployed 89540a95a737`。60 项应用测试和 21 项脚本测试通过，严格订单匹配、镜像核对、lastGood 记录成功，订单 `00a1d3a6-b93c-4fc7-972f-5b8d2d0e76ac`。#10 已 Keep forever。
+
+Docker 用量采样峰值 3.286 GiB，OOM 事件 0；构建阶段 pods-before/pods-after 对应原有 Pod 的重启计数一致。Mac memory_pressure free percentage 45–58%，swap used 在各次采样均为 1731.06 MiB；这是既有 swap，不能由此推断是本次构建产生。报告仍可能漏掉采样间隙的瞬时峰值。工具版本、内存与 Pod 快照均已归档。
+
+当前五镜像（历史 #5 摘要保留在前表）：
+
+| 服务 | #10 Registry 镜像引用 |
+| --- | --- |
+| orders | `localhost:5001/retail/orders@sha256:e959352586845bd14b9ac01f2af6a82b331ebda2120e38940571c98a04f0dfc4` |
+| checkout | `localhost:5001/retail/checkout@sha256:6718398f6f59ca006496fdee65ae5ea5e94d5a5f9278fe8d7ddef151171ee782` |
+| carts | `localhost:5001/retail/carts@sha256:65b0cf9c78886af23953d33a065a707bd6c9c89bc8fc2e5f38779838aa9624af` |
+| catalog | `localhost:5001/retail/catalog@sha256:6b634ffa77a3219c0da73106895d95a463642b093a53d9de13d1c92e7c51b2db` |
+| ui | `localhost:5001/retail/ui@sha256:6d217ce4c5701ba034555aa5e4297ac49855ca9653bfca09576f39e86fa6d29d` |

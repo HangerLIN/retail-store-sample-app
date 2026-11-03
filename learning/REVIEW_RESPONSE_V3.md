@@ -45,3 +45,9 @@ env/python/bin/python -m unittest discover -s learning/tests -v
 ```
 
 这些测试不需要运行 Docker 或 Kubernetes；执行实际 CI shell 的测试使用临时目录和假外部命令，不接触当前实验集群。
+
+## 修改后的真实流水线结果
+
+Jenkins #10 由 SCM 自动触发，源码 89540a95a737a9ac9da27398ee24388514c132c7，SUCCESS；构建描述为 deployed 89540a95a737。60 项应用测试、21 项脚本测试、生产依赖检查、完整下单及五个运行镜像核对均通过。#10 已永久保留，摘要与完整镜像引用补入 IMPLEMENTATION。
+
+这验证的是正常发布路径及本次修改，未将其扩写为真实故障注入成功。

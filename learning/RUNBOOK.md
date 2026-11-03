@@ -68,14 +68,16 @@ kubeReserved 2 GiB 和 evictionHard 500 MiB 只影响节点调度/驱逐，不�
 
 适用于不改变镜像、数据库 schema 和凭据的已审阅配置调整。发布身份不能自行接纳；不要手改 release-state。先停止接收新作业并确认没有构建，确保无 pending/recoveryFailed 且五个镜像与 lastGood 一致。
 
+```bash
+# 在仓库根目录，先暂停 Jenkins；idle 会在有运行作业时拒绝
+python3 learning/scripts/jenkins-api.py idle
+```
+
 1. 修改仓库配置，管理员应用相应 ConfigMap 与应用引用，保留 lastGood 镜像，不要直接把含上游默认镜像的渲染结果全量覆盖到线上。
 2. 等待受影响应用 rollout 完成。此时普通 preflight 因配置基线变化失败是预期保护。
-3. 在仓库根目录执行以下命令；默认管理员配置路径如有不同，替换为实际路径。
+3. 执行以下接纳与预检命令；默认管理员配置路径如有不同，替换为实际路径。
 
 ```bash
-# 暂停 Jenkins 接收新作业；idle 会在有运行作业时拒绝
-python3 learning/scripts/jenkins-api.py idle
-
 # 在一个子 shell 中显式选管理员配置，避免污染日常发布终端
 (
   source learning/scripts/environment.sh
@@ -88,7 +90,7 @@ bash learning/scripts/ci.sh preflight
 python3 learning/scripts/jenkins-api.py resume
 ```
 
-注意：第一条 idle 应在步骤 1 应用配置前执行。adopt-config 要求管理员 context 为 kind-retail-lab，且配置与仓库一致；这是操作防误用检查，不是额外安全隔离。它会真实下单、核对镜像，之后仅替换 configFingerprint，保留 images/sourceSha/verifiedAt，以原 resourceVersion 防止覆盖并发修改。报告为 reports/config-adoption.json。接纳失败时保持 Jenkins 暂停，修复配置或恢复原配置再验证，不要跳过检查。配置版本提交与 Jenkins 恢复应在同一维护窗口协调。
+adopt-config 要求管理员 context 为 kind-retail-lab，且配置与仓库一致；这是操作防误用检查，不是额外安全隔离。它会真实下单、核对镜像，之后仅替换 configFingerprint，保留 images/sourceSha/verifiedAt，以原 resourceVersion 防止覆盖并发修改。报告为 reports/config-adoption.json。接纳失败时保持 Jenkins 暂停，修复配置或恢复原配置再验证，不要跳过检查。配置版本提交与 Jenkins 恢复应在同一维护窗口协调。
 
 本次已经演练临时增加 UI 非业务配置、被拒绝、应用、接纳、恢复原配置、再次接纳；最终原 lastGood 内容完全恢复。没有直接改动 release-state 绕过验证。
 
