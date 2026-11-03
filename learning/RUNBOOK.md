@@ -54,7 +54,7 @@ Maven 学习配置只使用 Maven Central，避免上游 Spring milestone 仓库
 
 `reset` 会明确提示并要求输入确认字符串，再删除 kind 集群。**Retain 也救不了被删除的 kind 节点文件系统。** 需要的数据先导出；没有导出就不要 reset。Retain 只保护 PVC 删除后的卷回收，重新绑定 Released PV 是管理员任务。
 
-自动验证期间用 `caffeinate -i` 防止空闲休眠，不要合盖。Mac 或 Docker Desktop 重启会影响其他项目，需安排时间进行验收；普通 stop/start 不能冒充整机重启验收。
+自动验证期间用 `caffeinate -i` 防止空闲休眠，不要合盖。Docker Desktop 重启已在确认窗口内验证通过，详情见 IMPLEMENTATION.md。Mac 整机重启仍需另行安排；重启前确认没有构建并保存工作，登录后启动 Docker Desktop，检查容器、Agent、Pod 和原有订单/购物车，再做新下单。普通 stop/start 或 Docker VM 重启不能冒充整机重启验收。
 
 ## 数据与资源边界
 

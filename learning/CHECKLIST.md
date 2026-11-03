@@ -17,5 +17,5 @@
 - [x] 构建期间记录总体内存、Docker OOM、Pod 重启信息。
 - [x] 文档提交按 lastGood.sourceSha 判定跳过（Jenkins #6）。
 - [x] stop/start 同一批容器后数据仍在。
-- [ ] Docker Desktop 重启验收（需安排重启窗口）。
+- [x] Docker Desktop 重启验收（2026-11-03，经确认执行；原数据保留、Agent 自动重连）。
 - [ ] Mac 重启验收（需安排重启窗口）。

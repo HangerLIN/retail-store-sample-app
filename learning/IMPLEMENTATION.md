@@ -28,7 +28,7 @@
 
 ## 尚需完成或单独安排的验证
 
-请以 CHECKLIST.md 的勾选和 Jenkins 实际结果为准。Docker Desktop 与整机重启会影响其他项目，不在无人值守流程中执行；保留为明确的人工验收项。
+请以 CHECKLIST.md 的勾选和 Jenkins 实际结果为准。Docker Desktop 重启已在用户确认后验收通过，详见下节。Mac 整机重启尚未执行，保留为人工安排的验收项。
 
 ## 发布中断演练
 
@@ -42,8 +42,19 @@ Jenkins 构建 #3 在五个服务测试和镜像推送完成后，Orders 已更�
 - #5 的五个镜像、运行 imageID、提交 SHA 和虚构订单证据见该构建的归档。Docker OOM 事件为 0，构建期间控制器未重启。
 - 实验容器 stop/start 后三个容器 ID 不变；原订单 `eb65df38-c4c0-411f-a184-f514b95eef9e` 和 33 条购物车数据保留，新订单 `4d7503b6-cd3c-464c-9f9d-4a9d2d37794e` 创建成功，Agent 自动连接。
 - 全部依赖同时启动时有约一分钟恢复窗口，Orders 在依赖尚未可用时额外重启一次后自愈；这是本地单节点环境，未承诺零停机。
-- kind 节点、Jenkins、Registry 均配置 unless-stopped。Docker Desktop / Mac 整体重启仍未执行，不将普通容器重启冒充该验收。
+- kind 节点、Jenkins、Registry 均配置 unless-stopped。Docker Desktop 重启已完成单独验收；Mac 整机重启仍未执行，不将普通容器或 Docker 虚拟机重启冒充整机验收。
 
 #5 构建的 Docker 总占用采样峰值约 3.65 GiB，保留 8 GiB 配额。采样间隔约 5 秒，短于采样间隔的瞬时峰值可能未捕获；同时使用 OOM 事件与重启状态佐证。
 
 纯文档提交 `2b18d79f3f7b727650e7057c0a6a83f40b47ea4a` 自动触发 Jenkins #6，结果 SUCCESS；Test and build / Deploy, verify and record 均明确跳过，未复用旧测试报告。lastGood.sourceSha 仍指向已发布的 `2c9886e3b48a41c7c8f5d07d6c34aa6c54427e9d`。
+
+## Docker Desktop 重启验收（2026-11-03）
+
+经用户确认影响范围后，从 Docker Desktop 的 Troubleshoot → Restart 执行重启，没有删除或重建容器，也没有手工启动实验容器。重启前暂停 Jenkins 接收新作业；验收后恢复。
+
+- Docker VM 的 boot ID 已变化，Mac 启动时间未变化，确认覆盖了 Docker Desktop 重启。
+- kind、Registry、Jenkins 及既有 TimescaleDB 的容器 ID 均未变，启动时间均更新；均自动启动，TimescaleDB 恢复 healthy。
+- Jenkins 的原生 Mac Agent 自动重连；10 个 Pod 全部就绪。
+- Carts、Orders 在依赖尚未就绪时各额外重试一次，约一分钟后恢复。这是启动顺序导致的短暂不可用，不是零停机。
+- 重启前订单 `100b57ab-a0c5-4c0f-b052-0392a36d38e9` 仍可读取，购物车全部 33 条记录逐项比对一致；重启后新增订单 `b6d43eb3-c6be-4bb8-b238-f1fd674e39aa` 成功。
+- 本机详细前后快照及验证日志保存在忽略的 `env/reports/desktop-restart/`；快照不包含 Secret 值。
