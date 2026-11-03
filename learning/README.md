@@ -2,7 +2,8 @@
 
 先在 Mac 上跑完整网店和真实流水线；本期不创建 AWS 资源。
 
-- [设计与架构](DESIGN.md)
+- [当前完整架构与现状](ARCHITECTURE.md)
+- [历史设计与评审快照](DESIGN.md)
 - [运行手册](RUNBOOK.md)
 - [验收清单](CHECKLIST.md)
 - [最新实现与实测记录](IMPLEMENTATION.md)

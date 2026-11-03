@@ -1,6 +1,6 @@
 # 本地 Kubernetes 与 Jenkins 自动发布设计
 
-状态：v3 设计已进入实施。本文保留评审时的现状快照；最新事实与验收以 [IMPLEMENTATION.md](IMPLEMENTATION.md)、[CHECKLIST.md](CHECKLIST.md) 和 [RUNBOOK.md](RUNBOOK.md) 为准。核验日期：2026-11-03，Asia/Shanghai。
+状态：本文是 v3 实施前的历史设计，下面的“现状”“未部署”“本轮不继续部署”均为当时快照，不代表当前系统。当前完整架构请读 [ARCHITECTURE.md](ARCHITECTURE.md)，验收与操作见 [IMPLEMENTATION.md](IMPLEMENTATION.md)、[CHECKLIST.md](CHECKLIST.md) 和 [RUNBOOK.md](RUNBOOK.md)。文档标注更新：2026-11-03，Asia/Shanghai。
 
 目标是在本机运行完整示例网店，并验证从 GitHub 提交到 Jenkins 测试、构建、发布及失败恢复的流程。采用单节点 kind、一个 Jenkins 控制器、一个 Mac 原生构建 Agent 和一个本地镜像仓库。先满足学习和可重复操作需要，再根据实际瓶颈增加组件。
 
