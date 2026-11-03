@@ -1,6 +1,6 @@
 # 本地网店、Kubernetes 与 Jenkins：现状架构
 
-运行快照更新：2026-11-03 13:15，Asia/Shanghai；保留标明时间的历史验收数据。本文描述已经落地的系统；历史设计见 [DESIGN.md](DESIGN.md)，操作步骤见 [RUNBOOK.md](RUNBOOK.md)，验收证据见 [IMPLEMENTATION.md](IMPLEMENTATION.md)。
+运行快照更新：2026-11-03 13:25，Asia/Shanghai；保留标明时间的历史验收数据。本文描述已经落地的系统；历史设计见 [DESIGN.md](DESIGN.md)，操作步骤见 [RUNBOOK.md](RUNBOOK.md)，验收证据见 [IMPLEMENTATION.md](IMPLEMENTATION.md)。
 
 ## 1. 当前结论
 
@@ -17,18 +17,18 @@
 | Fork | [HangerLIN/retail-store-sample-app](https://github.com/HangerLIN/retail-store-sample-app)，分支 `main` |
 | 上游 | [aws-containers/retail-store-sample-app](https://github.com/aws-containers/retail-store-sample-app) |
 | 本地目录 | `/Users/lth/Documents/ChatGPT/k/retail-store-sample-app` |
-| 本文编写前仓库 HEAD | `5e79c55547d13186de177affaab03b310681b464`，连接中断分类修复 |
-| 当前已验证应用源码 | `5e79c55547d13186de177affaab03b310681b464`，由 Jenkins #14 发布 |
-| 最近 Jenkins 作业 | [#14 SUCCESS](http://127.0.0.1:8080/job/retail-local/14/)，描述 `deployed 5e79c55547d1`；核验时没有运行中的构建 |
+| 本文编写前仓库 HEAD | `47160d57555c342515596aed054f5fa83db349f3`，失败恢复验证与文档跳过规则 |
+| 当前已验证应用源码 | `47160d57555c342515596aed054f5fa83db349f3`，由 Jenkins #15 发布 |
+| 最近 Jenkins 作业 | [#15 SUCCESS](http://127.0.0.1:8080/job/retail-local/15/)，描述 `deployed 47160d57555c`；核验时没有运行中的构建 |
 | 集群 | `retail-lab`，节点 `retail-lab-control-plane` 为 Ready |
 | 业务工作负载 | `retail` 命名空间内 10/10 Pod Running、Ready |
 | 持久卷声明 | MySQL、PostgreSQL、DynamoDB 三个 PVC 均 Bound，各 1 GiB |
-| 发布状态 | `lastGood` 存在，`pending` 不存在，已记录版本的 `recoveryFailed=true`，表示该成功候选之前发生过真实业务恢复失败 |
-| 线上 digest 与 lastGood | 原始快照、配置接纳恢复后、#10 与 #14 发布验证均 5/5 一致 |
+| 发布状态 | `lastGood` 存在，`pending` 不存在，最新正常发布的 `recoveryFailed=false`；#14 的已归档 release-state 记录为 true |
+| 线上 digest 与 lastGood | 原始快照、配置接纳恢复后、#10、#14 与 #15 发布验证均 5/5 一致 |
 | 网店入口 | [http://127.0.0.1:8888](http://127.0.0.1:8888)，本次只读访问返回 HTTP 200 |
 | Jenkins 入口 | [retail-local](http://127.0.0.1:8080/job/retail-local/) |
 
-仓库 HEAD 与运行应用源码不必相同：#5 到 #9 是文档提交，检查后跳过重新构建和发布；#10 与 #14 因流水线和脚本变化，重新完成五服务发布。本文后续文档提交也不会替换 lastGood 的源码版本。判断正在运行什么，应看 `release-state.lastGood` 和 Deployment 的镜像摘要，不能只看 GitHub 最新提交。HTTP 200 是本次在线快照，完整业务成功的证据来自已完成的发布与重启验收，二者不混用。
+仓库 HEAD 与运行应用源码不必相同：#5 到 #9 是文档提交，检查后跳过重新构建和发布；#10、#14 与 #15 因流水线和脚本变化，重新完成五服务发布。本文后续文档提交也不会替换 lastGood 的源码版本。判断正在运行什么，应看 `release-state.lastGood` 和 Deployment 的镜像摘要，不能只看 GitHub 最新提交。HTTP 200 是本次在线快照，完整业务成功的证据来自已完成的发布与重启验收，二者不混用。
 
 ## 2. 部署架构与边界
 
@@ -287,7 +287,7 @@ Verify 对照部署引用、Registry manifest 和就绪 Pod 的 `status.imageID`
 | `pending` | 在改动线上镜像前保存的候选，发布中断时留下 |
 | 顶层 `recoveryFailed` | 准备阶段业务恢复失败，提示必须构建修复候选 |
 
-状态更新携带此前读到的 `resourceVersion`，避免静默覆盖并发手工改动。当前没有 pending，最近 verifiedAt 为 `2026-11-03T05:15:36.171381+00:00`（UTC），对应本轮 #14；lastGood 的 recoveryFailed 为 true，顶层 recoveryFailed 已被清除。
+状态更新携带此前读到的 `resourceVersion`，避免静默覆盖并发手工改动。当前没有 pending，最近 verifiedAt 为 `2026-11-03T05:25:40.163565+00:00`（UTC），对应本轮 #15；该正常后续发布使最新 lastGood.recoveryFailed 回到 false。#14 归档 release.json 保留其 true 的历史记录，见失败恢复证据。
 
 ```mermaid
 flowchart LR
@@ -357,6 +357,7 @@ Java 应用使用 `MaxRAMPercentage=60`；Jenkins 容器上限 1 GiB、Java 堆 
 | --- | --- |
 | 五服务真实测试和完整自动发布 | #5 原因经 Jenkins API 核实为 Started by an SCM change；SUCCESS，60 项测试，五个 digest、订单读回和 lastGood 均归档 |
 | 本轮修改的自动发布 | #10 SCM 触发，60 项应用测试与 21 项脚本测试通过；描述 deployed 89540a95a737，真实下单、镜像核对和 lastGood 记录成功，已永久保留 |
+| 故障修复后的自动发布 | #15 SCM 触发，验证连接中断分类及 evidence-only 跳过规则的发布脚本；60 项应用测试和 22 项脚本测试通过，真实下单、五镜像核对和 lastGood 记录成功 |
 | Verify 失败自动回滚 | #12 SCM 触发。候选 UI 保持 readiness 但将成功页 `Order ID` 改为 `Order reference`，完整结账的 smoke 因无法提取订单 ID 失败；构建为 FAILURE，五个 Deployment 回到 #10 lastGood，pending 清除，verifiedAt 不变；回滚后真实下单成功，候选 UI digest 仍能由 Registry HEAD 读取 |
 | recoveryFailed 后修复候选 | #13 首次将 UI 扩为 0 副本时暴露 `RemoteDisconnected` 未被归类为可恢复业务失败，FAILURE 且未写 flag；修复后 #14 在同一类恢复失败中写入顶层 flag，强制完整构建。测试期间恢复 UI 副本，候选成功发布，lastGood.recoveryFailed=true、顶层 flag 清除，真实下单和五镜像核对成功 |
 | 发布中断 | #3 在仅 Orders 更新后终止 Agent/发布进程，保留混合版本和 pending；#4 reconcile 成功恢复 |
