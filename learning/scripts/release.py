@@ -1,6 +1,6 @@
 """Serialized five-service releases, persisted intent and last verified rollback point."""
 
-import subprocess, json, hashlib, pathlib, urllib.request, urllib.error, sys, datetime, copy
+import subprocess, json, hashlib, pathlib, urllib.request, urllib.error, sys, datetime, copy, http.client
 from render import render
 from smoke import verify
 
@@ -12,7 +12,7 @@ class UnhealthyRelease(RuntimeError):
 def business_verify():
     try:
         return verify()
-    except (urllib.error.URLError, AssertionError) as e:
+    except (urllib.error.URLError, http.client.HTTPException, OSError, TimeoutError, AssertionError) as e:
         raise UnhealthyRelease(str(e)) from e
 
 

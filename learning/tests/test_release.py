@@ -1,5 +1,6 @@
 """State-machine regression tests. No Docker, Kubernetes or network required."""
 import copy
+import http.client
 import json
 import os
 from pathlib import Path
@@ -102,6 +103,11 @@ class ReleaseTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "Forbidden"):
                 release.reconcile(allow_unhealthy=True)
         self.assertEqual(self.writes, [])
+
+    def test_http_disconnect_is_recoverable_business_failure(self):
+        with patch.object(release, "verify", side_effect=http.client.RemoteDisconnected("no response")):
+            with self.assertRaises(release.UnhealthyRelease):
+                release.business_verify()
 
     def publishing(self):
         from contextlib import ExitStack
