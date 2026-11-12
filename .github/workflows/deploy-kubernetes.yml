@@ -4,12 +4,6 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      deploy:
-        description: Deploy even when RETAIL_DEPLOY_ENABLED is not set
-        required: false
-        type: boolean
-        default: true
 
 permissions:
   contents: read
@@ -33,19 +27,13 @@ jobs:
   publish-images:
     name: Build and publish images
     needs: test
-    if: ${{ github.event_name == 'workflow_dispatch' || vars.RETAIL_DEPLOY_ENABLED == 'true' }}
     runs-on: ubuntu-latest
-    environment: production
     steps:
       - uses: actions/checkout@v4
       - name: Set up Docker
         uses: ./.github/actions/setup-docker
       - name: Set up build environment
         uses: ./.github/actions/setup-env
-      - name: Verify deployment configuration
-        env:
-          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
-        run: test -n "$KUBECONFIG_B64"
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -62,7 +50,6 @@ jobs:
   deploy:
     name: Deploy with Helm and verify Pods
     needs: publish-images
-    if: ${{ github.event_name == 'workflow_dispatch' || vars.RETAIL_DEPLOY_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     environment: production
     steps:
