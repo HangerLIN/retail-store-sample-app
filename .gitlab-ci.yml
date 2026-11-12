@@ -1,0 +1,63 @@
+stages:
+  - test
+  - image
+  - deploy
+
+variables:
+  IMAGE_REPOSITORY_PREFIX: "$CI_REGISTRY_IMAGE/retail-store"
+  IMAGE_TAG: "$CI_COMMIT_SHORT_SHA"
+  K8S_NAMESPACE: "retail"
+  RELEASE_NAME: "retail-store"
+
+test:java:
+  stage: test
+  image: maven:3-eclipse-temurin-21
+  script:
+    - for service in cart orders ui; do (cd "src/$service" && ./mvnw -B verify); done
+  artifacts:
+    when: always
+    reports:
+      junit: src/*/target/surefire-reports/TEST-*.xml
+
+test:catalog:
+  stage: test
+  image: golang:1.25
+  script:
+    - cd src/catalog && go test ./...
+
+test:checkout:
+  stage: test
+  image: node:20-alpine
+  script:
+    - cd src/checkout && corepack enable && yarn install --immutable && yarn test && yarn build
+
+build-and-push:
+  stage: image
+  image: docker:27-cli
+  services:
+    - name: docker:27-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+  needs: [test:java, test:catalog, test:checkout]
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" --username "$CI_REGISTRY_USER" --password-stdin
+  script:
+    - sh ci/build-and-push.sh
+
+deploy:helm:
+  stage: deploy
+  image: dtzar/helm-kubectl:3.17.3
+  needs: [build-and-push]
+  environment:
+    name: production
+  before_script:
+    - test -n "$KUBECONFIG_B64"
+    - echo "$KUBECONFIG_B64" | base64 -d > kubeconfig
+    - export KUBECONFIG="$CI_PROJECT_DIR/kubeconfig"
+  script:
+    - export KUBECONFIG="$CI_PROJECT_DIR/kubeconfig"
+    - sh ci/deploy-helm.sh
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
