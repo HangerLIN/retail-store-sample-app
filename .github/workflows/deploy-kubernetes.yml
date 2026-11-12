@@ -50,24 +50,24 @@ jobs:
   deploy:
     name: Deploy with Helm and verify Pods
     needs: publish-images
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Windows, X64]
     environment: production
+    defaults:
+      run:
+        shell: '"C:\\Program Files\\Git\\bin\\bash.exe" -e {0}'
     steps:
       - uses: actions/checkout@v4
       - name: Set up Helm
         uses: azure/setup-helm@v4
       - name: Set up kubectl
         uses: azure/setup-kubectl@v4
-      - name: Configure cluster access
-        env:
-          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
+      - name: Verify local cluster access
         run: |
-          test -n "$KUBECONFIG_B64"
-          echo "$KUBECONFIG_B64" | base64 --decode > "$RUNNER_TEMP/kubeconfig"
+          kubectl config use-context docker-desktop
+          kubectl get nodes
       - name: Deploy release and wait for Pods
         env:
           IMAGE_TAG: ${{ github.sha }}
-          KUBECONFIG: ${{ runner.temp }}/kubeconfig
         run: |
           export IMAGE_REPOSITORY_PREFIX="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
           bash ci/deploy-helm.sh
