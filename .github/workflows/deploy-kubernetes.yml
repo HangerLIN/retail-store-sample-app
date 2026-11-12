@@ -1,0 +1,87 @@
+name: Build and deploy to Kubernetes
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy even when RETAIL_DEPLOY_ENABLED is not set
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: retail-production
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Test applications
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up build environment
+        uses: ./.github/actions/setup-env
+      - name: Build and test services
+        run: yarn nx run-many -t build,test --projects=tag:service --parallel=1
+
+  publish-images:
+    name: Build and publish images
+    needs: test
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.RETAIL_DEPLOY_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker
+        uses: ./.github/actions/setup-docker
+      - name: Set up build environment
+        uses: ./.github/actions/setup-env
+      - name: Verify deployment configuration
+        env:
+          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
+        run: test -n "$KUBECONFIG_B64"
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push immutable images
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          export IMAGE_REPOSITORY_PREFIX="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
+          yarn nx run-many -t container --push true --projects=tag:service --tags "${IMAGE_REPOSITORY_PREFIX}/retail-store-sample-{projectName}:${IMAGE_TAG}"
+
+  deploy:
+    name: Deploy with Helm and verify Pods
+    needs: publish-images
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.RETAIL_DEPLOY_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+      - name: Configure cluster access
+        env:
+          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
+        run: |
+          test -n "$KUBECONFIG_B64"
+          echo "$KUBECONFIG_B64" | base64 --decode > "$RUNNER_TEMP/kubeconfig"
+      - name: Deploy release and wait for Pods
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          KUBECONFIG: ${{ runner.temp }}/kubeconfig
+        run: |
+          export IMAGE_REPOSITORY_PREFIX="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
+          bash ci/deploy-helm.sh
+
