@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.6.4](https://github.com/HangerLIN/retail-store-sample-app/compare/v1.6.3...v1.6.4) (2026-11-12)
+
+
+### Bug Fixes
+
+* **ci:** use PowerShell on Windows runner ([b6a8f1b](https://github.com/HangerLIN/retail-store-sample-app/commit/b6a8f1b14906b190558bba62fa5ef6c38b60d4d0))
+* classify disconnected smoke checks as recoverable ([5e79c55](https://github.com/HangerLIN/retail-store-sample-app/commit/5e79c55547d13186de177affaab03b310681b464))
+* restore storefront order confirmation ([0608247](https://github.com/HangerLIN/retail-store-sample-app/commit/06082475183e71655c16c369ca03dd6af26c1ff8))
+
 ## [1.6.3](https://github.com/aws-containers/retail-store-sample-app/compare/v1.6.2...v1.6.3) (2026-09-25)
 
 
