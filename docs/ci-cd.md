@@ -30,9 +30,12 @@ For local Kubernetes delivery, register a self-hosted Windows runner on the
 Docker Desktop machine with the labels `self-hosted`, `Windows`, and `X64`.
 The workflow uses that runner's `docker-desktop` kubeconfig to deploy locally;
 no kubeconfig is stored in GitHub. The built-in `GITHUB_TOKEN` publishes images
-to GitHub Container Registry under `ghcr.io/<repository-owner>`. Every commit
-pushed to `main` tests all five services, publishes all five images, deploys
-the Helm release, and waits for the resulting Pods.
+to GitHub Container Registry under `ghcr.io/<repository-owner>`. Add the
+repository Actions secret `GHCR_PULL_TOKEN`, containing a dedicated token with
+read access to GitHub Packages. The deployment job materializes that secret as
+the `ghcr-pull` Kubernetes image-pull secret; the token is never committed or
+printed. Every commit pushed to `main` tests all five services, publishes all
+five images, deploys the Helm release, and waits for the resulting Pods.
 
 For Jenkins, create these credentials and set their IDs in the build
 parameters:
