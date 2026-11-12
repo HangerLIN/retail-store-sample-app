@@ -29,11 +29,10 @@ Set `IMAGE_REPOSITORY_PREFIX` to a registry path such as
 For GitHub Actions, create a protected `production` Environment and add its
 `KUBECONFIG_B64` secret, containing the base64-encoded kubeconfig. The workflow
 uses the built-in `GITHUB_TOKEN` to publish images to GitHub Container Registry
-under `ghcr.io/<repository-owner>`. Set the repository variable
-`RETAIL_DEPLOY_ENABLED` to `true` only after that Environment is ready. Until
-then, a push runs tests but skips image publication and deployment; this keeps a
-new workflow from publishing images or changing a cluster before credentials are
-configured.
+under `ghcr.io/<repository-owner>`. Every commit pushed to `main` tests all
+five services, publishes all five images, deploys the Helm release, and waits
+for the resulting Pods. Without `KUBECONFIG_B64`, the deployment job fails
+explicitly after image publication rather than silently skipping a release.
 
 For Jenkins, create these credentials and set their IDs in the build
 parameters:
