@@ -1,0 +1,81 @@
+pipeline {
+  agent any
+
+  options {
+    disableConcurrentBuilds()
+    timestamps()
+    timeout(time: 45, unit: 'MINUTES')
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+  }
+
+  parameters {
+    string(name: 'IMAGE_REPOSITORY_PREFIX', defaultValue: 'registry.example.com/team', description: 'Registry and repository prefix; images are published as <prefix>/retail-store-sample-<service>:<commit>')
+    string(name: 'REGISTRY_CREDENTIALS_ID', defaultValue: 'retail-registry', description: 'Jenkins username/password credential for the registry')
+    string(name: 'KUBECONFIG_CREDENTIALS_ID', defaultValue: 'retail-kubeconfig', description: 'Jenkins secret-file credential containing kubeconfig')
+    string(name: 'K8S_NAMESPACE', defaultValue: 'retail', description: 'Target Kubernetes namespace')
+    string(name: 'RELEASE_NAME', defaultValue: 'retail-store', description: 'Helm release name')
+    booleanParam(name: 'DEPLOY', defaultValue: true, description: 'Deploy only after tests and image publication succeed')
+  }
+
+  stages {
+    stage('Validate runner') {
+      steps {
+        sh 'docker version --format "{{.Server.Version}}"'
+        sh 'helm version --short'
+        sh 'kubectl version --client=true'
+      }
+    }
+
+    stage('Test applications') {
+      parallel {
+        stage('Test Java services') {
+          steps {
+            sh 'for service in cart orders ui; do (cd "src/$service" && ./mvnw -B verify); done'
+          }
+        }
+        stage('Test catalog') {
+          steps {
+            sh '(cd src/catalog && go test ./...)'
+          }
+        }
+        stage('Test checkout') {
+          steps {
+            sh '(cd src/checkout && corepack enable && yarn install --immutable && yarn test && yarn build)'
+          }
+        }
+      }
+    }
+
+    stage('Build and push images') {
+      steps {
+        script {
+          env.IMAGE_TAG = sh(script: 'git rev-parse --short=12 HEAD', returnStdout: true).trim()
+          env.IMAGE_REPOSITORY_PREFIX = params.IMAGE_REPOSITORY_PREFIX
+        }
+        withCredentials([usernamePassword(credentialsId: params.REGISTRY_CREDENTIALS_ID, usernameVariable: 'REGISTRY_USERNAME', passwordVariable: 'REGISTRY_PASSWORD')]) {
+          sh '''
+            registry_host="${IMAGE_REPOSITORY_PREFIX%%/*}"
+            printf '%s' "$REGISTRY_PASSWORD" | docker login "$registry_host" --username "$REGISTRY_USERNAME" --password-stdin
+            bash ci/build-and-push.sh
+          '''
+        }
+      }
+    }
+
+    stage('Deploy with Helm') {
+      when { expression { return params.DEPLOY } }
+      steps {
+        withCredentials([file(credentialsId: params.KUBECONFIG_CREDENTIALS_ID, variable: 'KUBECONFIG')]) {
+          sh 'bash ci/deploy-helm.sh'
+        }
+      }
+    }
+  }
+
+  post {
+    always {
+      junit allowEmptyResults: true, testResults: 'src/*/target/surefire-reports/TEST-*.xml'
+    }
+  }
+}
+
