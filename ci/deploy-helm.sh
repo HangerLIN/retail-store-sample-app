@@ -9,6 +9,16 @@ set -euo pipefail
 K8S_NAMESPACE="${K8S_NAMESPACE:-retail}"
 RELEASE_NAME="${RELEASE_NAME:-retail-store}"
 IMAGE_REPOSITORY_PREFIX="${IMAGE_REPOSITORY_PREFIX%/}"
+IMAGE_PULL_SECRET="${IMAGE_PULL_SECRET:-}"
+
+image_pull_secret_args=()
+if [[ -n "${IMAGE_PULL_SECRET}" ]]; then
+  for service in cart catalog checkout orders ui; do
+    image_pull_secret_args+=(
+      --set-string "${service}.imagePullSecrets[0].name=${IMAGE_PULL_SECRET}"
+    )
+  done
+fi
 
 helm dependency build src/app/chart
 helm upgrade --install "${RELEASE_NAME}" src/app/chart \
@@ -25,7 +35,8 @@ helm upgrade --install "${RELEASE_NAME}" src/app/chart \
   --set-string "orders.image.repository=${IMAGE_REPOSITORY_PREFIX}/retail-store-sample-orders" \
   --set-string "orders.image.tag=${IMAGE_TAG}" \
   --set-string "ui.image.repository=${IMAGE_REPOSITORY_PREFIX}/retail-store-sample-ui" \
-  --set-string "ui.image.tag=${IMAGE_TAG}"
+  --set-string "ui.image.tag=${IMAGE_TAG}" \
+  "${image_pull_secret_args[@]}"
 
 for deployment in catalog carts checkout orders ui; do
   kubectl -n "${K8S_NAMESPACE}" rollout status "deployment/${deployment}" --timeout=10m

@@ -50,24 +50,39 @@ jobs:
   deploy:
     name: Deploy with Helm and verify Pods
     needs: publish-images
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Windows, X64]
     environment: production
+    defaults:
+      run:
+        shell: '"C:\\Program Files\\Git\\bin\\bash.exe" -e {0}'
     steps:
       - uses: actions/checkout@v4
       - name: Set up Helm
         uses: azure/setup-helm@v4
       - name: Set up kubectl
         uses: azure/setup-kubectl@v4
-      - name: Configure cluster access
-        env:
-          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
+      - name: Verify local cluster access
         run: |
-          test -n "$KUBECONFIG_B64"
-          echo "$KUBECONFIG_B64" | base64 --decode > "$RUNNER_TEMP/kubeconfig"
+          kubectl config use-context docker-desktop
+          kubectl get nodes
+      - name: Authorize Kubernetes to pull application images
+        env:
+          GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
+        run: |
+          if [[ -z "${GHCR_PULL_TOKEN}" ]]; then
+            echo "GHCR_PULL_TOKEN is required to pull private GHCR images." >&2
+            exit 1
+          fi
+          kubectl create namespace retail --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n retail create secret docker-registry ghcr-pull \
+            --docker-server=ghcr.io \
+            --docker-username="${GITHUB_REPOSITORY_OWNER}" \
+            --docker-password="${GHCR_PULL_TOKEN}" \
+            --dry-run=client -o yaml | kubectl apply -f -
       - name: Deploy release and wait for Pods
         env:
           IMAGE_TAG: ${{ github.sha }}
-          KUBECONFIG: ${{ runner.temp }}/kubeconfig
+          IMAGE_PULL_SECRET: ghcr-pull
         run: |
           export IMAGE_REPOSITORY_PREFIX="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
           bash ci/deploy-helm.sh

@@ -26,13 +26,16 @@ Set `IMAGE_REPOSITORY_PREFIX` to a registry path such as
 <prefix>/retail-store-sample-ui:<git-sha>
 ```
 
-For GitHub Actions, create a protected `production` Environment and add its
-`KUBECONFIG_B64` secret, containing the base64-encoded kubeconfig. The workflow
-uses the built-in `GITHUB_TOKEN` to publish images to GitHub Container Registry
-under `ghcr.io/<repository-owner>`. Every commit pushed to `main` tests all
-five services, publishes all five images, deploys the Helm release, and waits
-for the resulting Pods. Without `KUBECONFIG_B64`, the deployment job fails
-explicitly after image publication rather than silently skipping a release.
+For local Kubernetes delivery, register a self-hosted Windows runner on the
+Docker Desktop machine with the labels `self-hosted`, `Windows`, and `X64`.
+The workflow uses that runner's `docker-desktop` kubeconfig to deploy locally;
+no kubeconfig is stored in GitHub. The built-in `GITHUB_TOKEN` publishes images
+to GitHub Container Registry under `ghcr.io/<repository-owner>`. Add the
+repository Actions secret `GHCR_PULL_TOKEN`, containing a dedicated token with
+read access to GitHub Packages. The deployment job materializes that secret as
+the `ghcr-pull` Kubernetes image-pull secret; the token is never committed or
+printed. Every commit pushed to `main` tests all five services, publishes all
+five images, deploys the Helm release, and waits for the resulting Pods.
 
 For Jenkins, create these credentials and set their IDs in the build
 parameters:
